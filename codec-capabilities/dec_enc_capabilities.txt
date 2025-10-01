@@ -1,0 +1,67 @@
+ENCODERS:
+
+$ ffmpeg -encoders
+
+V..... = Video                                                                                                                                                                                             
+A..... = Audio                                                                                                                                                                                             
+S..... = Subtitle                                                                                                                                                                                          
+.F.... = Frame-level multithreading                                                                                                                                                                        
+..S... = Slice-level multithreading                                                                                                                                                                        
+...X.. = Codec is experimental                                                                                                                                                                             
+....B. = Supports draw_horiz_band                                                                                                                                                                          
+.....D = Supports direct rendering method 1         
+
+V..... libx264              libx264 H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10 (codec h264)                                                                                                                 
+
+Capabilities:                                                                                                                                                                                               
+ - AV_CODEC_CAP_DELAY                                                                                                                                                                                       
+ - AV_CODEC_CAP_AUTO_THREADS                                                                                                                                                                                
+
+V..... libx264rgb           libx264 H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10 RGB (codec h264)                                                                                                             
+
+Capabilities:                                                                                                                                                                                               
+ - AV_CODEC_CAP_DELAY                                                                                                                                                                                       
+ - AV_CODEC_CAP_AUTO_THREADS                                                                                                                                                                                
+
+VFS... mjpeg                MJPEG (Motion JPEG)                                                                                                                                                            
+
+Capabilities:                                                                                                                                                                                               
+ - AV_CODEC_CAP_FRAME_THREADS                                                                                                                                                                               
+ - AV_CODEC_CAP_SLICE_THREADS                                                                                                                                                                               
+
+DECODERS:
+
+$ ffmpeg -decoders
+
+V..... = Video                                                                                                                                                                                             
+A..... = Audio                                                                                                                                                                                             
+S..... = Subtitle                                                                                                                                                                                          
+.F.... = Frame-level multithreading                                                                                                                                                                        
+..S... = Slice-level multithreading                                                                                                                                                                        
+...X.. = Codec is experimental                                                                                                                                                                             
+....B. = Supports draw_horiz_band                                                                                                                                                                          
+.....D = Supports direct rendering method 1
+
+VFS..D h264                 H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10 
+
+Capabilities:                                                                                                                                                                                               
+ - AV_CODEC_CAP_DR1                                                                                                                                                                                         
+ - AV_CODEC_CAP_DELAY                                                                                                                                                                                       
+ - AV_CODEC_CAP_FRAME_THREADS                                                                                                                                                                               
+ - AV_CODEC_CAP_SLICE_THREADS                     
+
+V....D mjpeg                MJPEG (Motion JPEG)
+
+Capabilities:                                                                                                                                                                                               
+ - AV_CODEC_CAP_DR1                                                                                                                                                                                         
+
+V....D mjpegb               Apple MJPEG-B
+
+Capabilities:                                                                                                                                                                                               
+ - AV_CODEC_CAP_DR1                                                                                                                                                                                         
+                                                                                                                              
+
+
+
+
+
