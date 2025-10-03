@@ -17,6 +17,11 @@ ffmpeg -i <compressed> -i <original> -lavfi psnr -f null -
 To run ssim:
 ffmpeg -i <compressed> -i <original> -lavfi ssim -f null -
 
+To compile and execute:
+gcc transcode.c -o transcode -lavcodec -lavutil
+./transcode input.h264 output.mjpeg
+
+To execute tests: 
 echo threads_in,threads_out,type,time > benchmarking.csv; for i in 0 1 4 8 12 16; do for j in 0 1 4 8 12 16; do echo "${i} ${j}:"; gcc transcode.c -o transcode -lavcodec -lavutil -DTHREADS_IN=$i -DTHREADS_OUT=$j && ./transcode input.h264 ${i}_${j}.mjpeg >> benchmarking.csv;  done;done;
  */
 
@@ -41,23 +46,16 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
 {
     int ret_dec;
     int ret_enc;
-    int64_t start_time, end_time;
-    int64_t start_total, end_total;
-
-    start_time = start_total = av_gettime();
+    if(inpkt)
+    	inpkt->dts = av_gettime();
     ret_dec = avcodec_send_packet(dec_ctx, inpkt);
-    end_time = av_gettime();
-    printf("%d, %d,'send_packet',%"PRId64"\n", THREADS_IN, THREADS_OUT, end_time - start_time);
-
     if (ret_dec < 0) {
         fprintf(stderr, "Error sending a packet for decoding\n");
         exit(1);
     }
 
     while (ret_dec >= 0) {
-        start_time = av_gettime();
         ret_dec = avcodec_receive_frame(dec_ctx, frame);
-        end_time = av_gettime();
 
         if (ret_dec == AVERROR(EAGAIN) || ret_dec == AVERROR_EOF) {
             break;
@@ -65,12 +63,10 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
             fprintf(stderr, "Error during decoding\n");
             exit(1);
         }
+
 	frame->quality = FF_QP2LAMBDA * 0;
         frame->pts = frame->pkt_dts;
-        start_time = av_gettime();
         ret_enc = avcodec_send_frame(enc_ctx, frame);
-        end_time = av_gettime();
-        printf("%d, %d,'send_frame',%"PRId64"\n", THREADS_IN, THREADS_OUT, end_time - start_time);
 
         if (ret_enc < 0) {
             fprintf(stderr, "Error sending a frame for encoding\n");
@@ -78,9 +74,7 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
         }
 
         while (ret_enc >= 0) {
-            start_time = av_gettime();
             ret_enc = avcodec_receive_packet(enc_ctx, outpkt);
-            end_time = av_gettime();
 
             if (ret_enc == AVERROR(EAGAIN) || ret_enc == AVERROR_EOF) {
                 break;
@@ -89,27 +83,24 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
                 exit(1);
             }
 
+	    if(inpkt)
+            	printf("%d, %d,'transcoding',%"PRId64"\n", THREADS_IN, THREADS_OUT, av_gettime() - outpkt->dts);
+
             fwrite(outpkt->data, 1, outpkt->size, outfile);
             av_packet_unref(outpkt);
         }
     }
-    end_total = av_gettime();
-    printf("%d, %d,'transcoding',%"PRId64"\n", THREADS_IN, THREADS_OUT, end_total - start_total);
     if(inpkt)
 	    return;
     ret_enc = avcodec_send_frame(enc_ctx, NULL);
     while (ret_enc >= 0) {
-        start_time = av_gettime();
         ret_enc = avcodec_receive_packet(enc_ctx, outpkt);
-        end_time = av_gettime();
-
         if (ret_enc == AVERROR(EAGAIN) || ret_enc == AVERROR_EOF) {
             return;
         } else if (ret_enc < 0) {
             fprintf(stderr, "Error during encoding\n");
             exit(1);
         }
-
         fwrite(outpkt->data, 1, outpkt->size, outfile);
         av_packet_unref(outpkt);
     }
@@ -181,8 +172,8 @@ int main(int argc, char** argv){
         fprintf(stderr, "Could not allocate video codec context\n");
         exit(1);
     }
-    incodec_ctx->time_base = (AVRational){1, 30};
-    incodec_ctx->framerate = (AVRational){30, 1};
+    incodec_ctx->time_base = (AVRational){1, 25};
+    incodec_ctx->framerate = (AVRational){25, 1};
     incodec_ctx->thread_count = THREADS_IN;
     if (avcodec_open2(incodec_ctx, incodec, NULL) < 0) {
         fprintf(stderr, "Could not open codec\n");
@@ -201,11 +192,11 @@ int main(int argc, char** argv){
     }
 
     outcodec_ctx->flags |= AV_CODEC_FLAG_QSCALE;
-    outcodec_ctx->time_base = (AVRational){1, 30};
-    outcodec_ctx->framerate = (AVRational){30, 1};
+    outcodec_ctx->time_base = (AVRational){1, 25};
+    outcodec_ctx->framerate = (AVRational){25, 1};
     outcodec_ctx->pix_fmt = AV_PIX_FMT_YUVJ420P;
-    outcodec_ctx->width = 1280;
-    outcodec_ctx->height = 720;
+    outcodec_ctx->width = 3840;
+    outcodec_ctx->height = 2160;
     outcodec_ctx->thread_count = THREADS_OUT;
     ret = avcodec_open2(outcodec_ctx, outcodec, NULL);
 
@@ -217,9 +208,10 @@ int main(int argc, char** argv){
     int64_t start_time;
     int64_t diff;
 
+    start_time = av_gettime();
+
     while (!feof(input)) {
 
-	start_time = av_gettime();
         data_size = fread(inbuf, 1, INBUF_SIZE, input);
         if (!data_size)
             break;
@@ -238,12 +230,9 @@ int main(int argc, char** argv){
             if (inpkt->size)
 		    transcode(incodec_ctx, outcodec_ctx, inpkt, frame, outpkt, output);
         }
-	diff = av_gettime() - start_time;
-	if(diff < 5000){
-		av_usleep(diff);
-	}
     }
     transcode(incodec_ctx, outcodec_ctx, NULL, frame, outpkt, output);
+    printf("%d, %d,'total',%"PRId64"\n", THREADS_IN, THREADS_OUT, av_gettime() - start_time);
     avcodec_free_context(&outcodec_ctx);
     avcodec_free_context(&incodec_ctx);
     av_frame_free(&frame);
