@@ -10,7 +10,6 @@
 
 
 /*
-
 To run psnr:
 ffmpeg -i <compressed> -i <original> -lavfi psnr -f null -
 
@@ -19,14 +18,12 @@ ffmpeg -i <compressed> -i <original> -lavfi ssim -f null -
 
 To compile and execute:
 gcc transcode.c -o transcode -lavcodec -lavutil
-./transcode input.h264 output.mjpeg
+./transcode input.h264 output.mjpeg <width> <height> <fps>
 
 To execute tests: 
-echo threads_in,threads_out,type,time > benchmarking.csv; for i in 0 1 4 8 12 16; do for j in 0 1 4 8 12 16; do echo "${i} ${j}:"; gcc transcode.c -o transcode -lavcodec -lavutil -DTHREADS_IN=$i -DTHREADS_OUT=$j && ./transcode input.h264 ${i}_${j}.mjpeg >> benchmarking.csv;  done;done;
  */
 
-
-#define INBUF_SIZE 100000
+#define INBUF_SIZE 10000
 
 #ifndef THREADS_IN
 #define THREADS_IN 0
@@ -109,6 +106,8 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
 
 int main(int argc, char** argv){
     int ret;
+    int width, height, fps;
+    
 
     const char *infilename, *outfilename;
     FILE *input, *output;
@@ -124,8 +123,8 @@ int main(int argc, char** argv){
     AVCodecContext *outcodec_ctx= NULL;
     AVPacket *outpkt;
 
-    if (argc <= 2) {
-        fprintf(stderr, "Usage: %s <input file> <output file>\n", argv[0]);
+    if (argc < 6) {
+        fprintf(stderr, "Usage: %s <input file> <output file> <width> <height> <fps>\n", argv[0]);
         exit(0);
     }
 
@@ -139,6 +138,21 @@ int main(int argc, char** argv){
     output = fopen(outfilename, "wb");
     if (!output) {
         fprintf(stderr, "Could not open %s\n", outfilename);
+        exit(1);
+    }
+    width = atoi(argv[3]);
+    if (!width) {
+        fprintf(stderr, "The width value isn't valid: %s\n", argv[3]);
+        exit(1);
+    }
+    height = atoi(argv[4]);
+    if (!height) {
+        fprintf(stderr, "The height value isn't valid: %s\n", argv[4]);
+        exit(1);
+    }
+    fps = atoi(argv[5]);
+    if (!fps) {
+        fprintf(stderr, "The fps value isn't valid: %s\n", argv[5]);
         exit(1);
     }
  
@@ -192,11 +206,11 @@ int main(int argc, char** argv){
     }
 
     outcodec_ctx->flags |= AV_CODEC_FLAG_QSCALE;
-    outcodec_ctx->time_base = (AVRational){1, 25};
-    outcodec_ctx->framerate = (AVRational){25, 1};
+    outcodec_ctx->time_base = (AVRational){1, fps};
+    outcodec_ctx->framerate = (AVRational){fps, 1};
     outcodec_ctx->pix_fmt = AV_PIX_FMT_YUVJ420P;
-    outcodec_ctx->width = 3840;
-    outcodec_ctx->height = 2160;
+    outcodec_ctx->width = width;
+    outcodec_ctx->height = height;
     outcodec_ctx->thread_count = THREADS_OUT;
     ret = avcodec_open2(outcodec_ctx, outcodec, NULL);
 
@@ -206,7 +220,6 @@ int main(int argc, char** argv){
     }
 
     int64_t start_time;
-    int64_t diff;
 
     start_time = av_gettime();
 
