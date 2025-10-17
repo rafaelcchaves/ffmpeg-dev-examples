@@ -20,6 +20,7 @@ g = sns.FacetGrid(df, col="type", col_wrap=2, height=5)
 def heatmap_facet(*args, **kwargs):
     data = kwargs.pop('data')
     pivot_data = data.pivot_table(index='threads_in', columns='threads_out', values='time')
+    print(pivot_data)
     sns.heatmap(pivot_data, annot=True, fmt=".1f", cmap="viridis_r", **kwargs)
 
 g.map_dataframe(heatmap_facet)

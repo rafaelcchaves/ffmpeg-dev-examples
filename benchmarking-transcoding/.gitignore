@@ -1,4 +1,7 @@
 *.out
+*.yuv
+*.jxs
+*.raw
 *.mjpeg
 *.h264
 *.csv

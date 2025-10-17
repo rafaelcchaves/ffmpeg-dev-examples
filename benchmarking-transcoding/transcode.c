@@ -18,7 +18,7 @@ ffmpeg -i <compressed> -i <original> -lavfi ssim -f null -
 
 To compile and execute:
 gcc transcode.c -o transcode -lavcodec -lavutil
-./transcode input.h264 output.mjpeg <width> <height> <fps>
+./transcode -i input.h264 -o output.mjpeg -s <width>x<height> -f <fps> -e <encoder>
 
 To execute tests: 
  */
@@ -61,7 +61,9 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
             exit(1);
         }
 
-	frame->quality = FF_QP2LAMBDA * 0;
+        if (strcmp(enc_ctx->codec->name, "mjpeg") == 0) {
+            frame->quality = FF_QP2LAMBDA * 2;
+        }
         frame->pts = frame->pkt_dts;
         ret_enc = avcodec_send_frame(enc_ctx, frame);
 
@@ -106,10 +108,10 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
 
 int main(int argc, char** argv){
     int ret;
-    int width, height, fps;
+    int width = 0, height = 0, fps = 0;
     
 
-    const char *infilename, *outfilename;
+    const char *infilename = NULL, *outfilename = NULL;
     FILE *input, *output;
 
     const AVCodec *incodec;
@@ -123,36 +125,55 @@ int main(int argc, char** argv){
     AVCodecContext *outcodec_ctx= NULL;
     AVPacket *outpkt;
 
-    if (argc < 6) {
-        fprintf(stderr, "Usage: %s <input file> <output file> <width> <height> <fps>\n", argv[0]);
-        exit(0);
+    int opt;
+    char *size_arg = NULL;
+    const char *encoder_name = NULL;
+
+    while ((opt = getopt(argc, argv, "i:o:s:f:e:")) != -1) {
+        switch (opt) {
+            case 'i':
+                infilename = optarg;
+                break;
+            case 'o':
+                outfilename = optarg;
+                break;
+            case 's':
+                size_arg = optarg;
+                break;
+            case 'f':
+                fps = atoi(optarg);
+                break;
+            case 'e':
+                encoder_name = optarg;
+                break;
+            default:
+                fprintf(stderr, "Usage: %s -i <input file> -o <output file> -s <width>x<height> -f <fps> -e <encoder>\n", argv[0]);
+                exit(1);
+        }
     }
 
-    infilename = argv[1];
+    if (size_arg) {
+        char *x_ptr = strchr(size_arg, 'x');
+        if (x_ptr) {
+            *x_ptr = '\0';
+            width = atoi(size_arg);
+            height = atoi(x_ptr + 1);
+        }
+    }
+
+    if (infilename == NULL || outfilename == NULL || width == 0 || height == 0 || fps == 0 || encoder_name == NULL) {
+        fprintf(stderr, "Usage: %s -i <input file> -o <output file> -s <width>x<height> -f <fps> -e <encoder>\n", argv[0]);
+        exit(1);
+    }
+
     input = fopen(infilename, "rb");
     if (!input) {
         fprintf(stderr, "Could not open %s\n",infilename);
         exit(1);
     }
-    outfilename = argv[2];
     output = fopen(outfilename, "wb");
     if (!output) {
         fprintf(stderr, "Could not open %s\n", outfilename);
-        exit(1);
-    }
-    width = atoi(argv[3]);
-    if (!width) {
-        fprintf(stderr, "The width value isn't valid: %s\n", argv[3]);
-        exit(1);
-    }
-    height = atoi(argv[4]);
-    if (!height) {
-        fprintf(stderr, "The height value isn't valid: %s\n", argv[4]);
-        exit(1);
-    }
-    fps = atoi(argv[5]);
-    if (!fps) {
-        fprintf(stderr, "The fps value isn't valid: %s\n", argv[5]);
         exit(1);
     }
  
@@ -186,16 +207,16 @@ int main(int argc, char** argv){
         fprintf(stderr, "Could not allocate video codec context\n");
         exit(1);
     }
-    incodec_ctx->time_base = (AVRational){1, 25};
-    incodec_ctx->framerate = (AVRational){25, 1};
+    incodec_ctx->time_base = (AVRational){1, fps};
+    incodec_ctx->framerate = (AVRational){fps, 1};
     incodec_ctx->thread_count = THREADS_IN;
     if (avcodec_open2(incodec_ctx, incodec, NULL) < 0) {
         fprintf(stderr, "Could not open codec\n");
         exit(1);
     }
-    outcodec = avcodec_find_encoder_by_name("mjpeg");
+    outcodec = avcodec_find_encoder_by_name(encoder_name);
     if (!outcodec) {
-        fprintf(stderr, "Codec '%s' not found\n", "libx264");
+        fprintf(stderr, "Codec '%s' not found\n", encoder_name);
         exit(1);
     }
 
@@ -205,10 +226,23 @@ int main(int argc, char** argv){
         exit(1);
     }
 
-    outcodec_ctx->flags |= AV_CODEC_FLAG_QSCALE;
+    if (strcmp(encoder_name, "libsvtjpegxs") == 0) {
+        ret = av_opt_set(outcodec_ctx->priv_data, "bpp", "4", 0);
+        if (ret < 0) {
+            fprintf(stderr, "Could not set bpp option\n");
+            avcodec_free_context(&outcodec_ctx);
+            return 1;
+        }
+    } else if (strcmp(encoder_name, "mjpeg") == 0) {
+        outcodec_ctx->flags |= AV_CODEC_FLAG_QSCALE;
+    }
     outcodec_ctx->time_base = (AVRational){1, fps};
     outcodec_ctx->framerate = (AVRational){fps, 1};
-    outcodec_ctx->pix_fmt = AV_PIX_FMT_YUVJ420P;
+    if (strcmp(encoder_name, "mjpeg") == 0) {
+        outcodec_ctx->pix_fmt = AV_PIX_FMT_YUVJ420P;
+    } else {
+        outcodec_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
+    }
     outcodec_ctx->width = width;
     outcodec_ctx->height = height;
     outcodec_ctx->thread_count = THREADS_OUT;
