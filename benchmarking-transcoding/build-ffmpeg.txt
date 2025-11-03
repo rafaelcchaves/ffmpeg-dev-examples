@@ -1,0 +1,81 @@
+SVT-JPEG-XS
+
+https://github.com/OpenVisualCloud/SVT-JPEG-XS.git
+cd SVT-JPEG-XS
+./build.sh install --prefix /usr/local/
+cd <path-to-ffmpeg>
+cp <path-to-svt-jpeg>/ffmpeg-plugin/libsvtjpegxs* ./libavcodec/
+git am --whitespace=fix <path-to-svt-jpeg>/ffmpeg-plugin/7.1/*.patch
+
+SVT-AV1
+
+git clone --depth=1 https://gitlab.com/AOMediaCodec/SVT-AV1.git
+cd SVT-AV1
+git fetch -t
+git checkout v1.8.0
+cmake .. -G"Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+cd Build/
+make -j $(nproc)
+sudo make install 
+
+DAV1D
+
+sudo apt install libdav1d-dev
+
+AVC
+
+sudo apt install nasm libx264-dev
+
+HEVC
+
+sudo apt install libx265-dev libnuma-dev
+
+VVENC
+
+git clone https://github.com/fraunhoferhhi/vvenc.git
+make install-prefix=/usr/local -j 16
+sudo make install
+
+VVDEC
+
+### Install VVDec
+
+git clone https://github.com/fraunhoferhhi/vvdec.git
+cd vvdec
+make install-prefix=/usr/local -j 16
+sudo make install
+
+#### Add support to VVDec in FFMPEG
+
+wget -O ~/libvvdec.patch https://raw.githubusercontent.com/wiki/fraunhoferhhi/vvdec/data/patch/v7-0001-avcodec-add-external-dec-libvvdec-for-H266-VVC.patch
+cd <ffmpeg-path>
+patch -p 1 < ~/libvvdec.patch
+
+FFMPEG
+
+git clone https://git.ffmpeg.org/ffmpeg.git ffmpeg
+cd ffmpeg
+git checkout n7.1
+
+####
+# Install the dependencies
+####
+
+./configure \
+  --prefix=/usr/local \
+  --bindir=/usr/local/bin \
+  --enable-shared \
+  --extra-cflags=-I/usr/local/include \
+  --enable-gpl \
+  --enable-gnutls \
+  --enable-libsvtav1 \
+  --enable-libdav1d \
+  --enable-libsvtjpegxs \
+  --enable-libvpx \
+  --enable-libx264 \
+  --enable-libx265 \
+  --enable-libvvenc \
+  --enable-libvvdec
+
+make -j $(nproc)
+sudo make install
