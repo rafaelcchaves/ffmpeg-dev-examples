@@ -1,98 +1,99 @@
-# Benchmark de Transcodificação de Vídeo
+# Benchmarking de Transcodificação de Vídeo
 
-Este projeto fornece um conjunto de ferramentas para avaliar (benchmark) o desempenho de um transcodificador de vídeo simples.  
-Ele automatiza o processo de compilação e execução de um transcodificador em C com várias configurações de threads, coleta dados de desempenho e gera uma análise visual dos resultados.
+Este projeto contém um conjunto de scripts para realizar benchmarking de transcodificação e decodificação de vídeo utilizando FFmpeg e compilando programas em C.
 
----
+## Estrutura do Projeto
 
-## Descrição dos Arquivos
-
-transcode.c** — Código-fonte de um transcodificador simples que transcodifica streams de vídeo de vários formatos de contêiner (por exemplo, MP4) para um formato de saída especificado, usando as bibliotecas FFmpeg e detectando automaticamente o codec de entrada.
-- **`transcode.sh`** — Script de shell que automatiza o processo de benchmarking. Ele compila e executa o `transcode.c` várias vezes com diferentes números de threads de codificação e decodificação e salva os resultados em um arquivo CSV.  
-- **`compare.sh`** — Script de shell que compara a qualidade de vídeo e o tamanho de arquivo de diferentes codecs.  
-- **`analyse.py`** — Script Python que lê os dados do CSV gerado pelo benchmark e cria gráficos de mapa de calor (heatmap) para visualizar o desempenho com base nas configurações de thread.
-
----
+-   `dataset/generate.sh`: Gera arquivos de vídeo codificados a partir de um arquivo YUV bruto.
+-   `transcode.c` / `transcode.sh`: Realiza a transcodificação de um vídeo para diferentes formatos.
+-   `decode.c` / `decode.sh`: Realiza a decodificação de um vídeo.
+-   `compare.sh`: Compara a qualidade de diferentes arquivos de vídeo em relação a um arquivo de referência usando SSIM.
+-   `build-ffmpeg.md`: Guia para compilar o FFmpeg com os codecs necessários.
 
 ## Pré-requisitos
 
-### 1. Compilador C e Bibliotecas FFmpeg
-
-Você precisará do `gcc` e das bibliotecas de desenvolvimento do FFmpeg (`libavcodec` e `libavutil`).
-
-Em sistemas baseados em Debian/Ubuntu:
-
-```bash
-sudo apt-get update && sudo apt-get install build-essential libavcodec-dev libavutil-dev libavformat-dev libm-dev
-```
-
-### 2. Ambiente Python
-
-Você precisará do Python 3 e dos seguintes pacotes:
-
-```bash
-pip install pandas seaborn matplotlib
-```
-
----
+-   **FFmpeg**: É necessário ter o FFmpeg instalado com os seguintes codecs habilitados: `libvvenc`, `libsvtav1`, `libvpx-vp9`, `libx264`, `libx265`. Consulte o guia `build-ffmpeg.md` para obter instruções de compilação.
+-   **Compilador C**: É necessário ter um compilador C (como o `gcc`) para compilar os programas `transcode.c` e `decode.c`.
+-   **Arquivo de Vídeo YUV**: Para o script `dataset/generate.sh`, você precisará de um arquivo de vídeo bruto no formato YUV.
 
 ## Como Usar
 
-### Passo 1: Executar o Script de Benchmark
+### 1. Gerar Arquivos de Vídeo (`dataset/generate.sh`)
 
-Primeiro, torne o script `transcode.sh` executável:
+Este script codifica um arquivo de vídeo YUV bruto em vários formatos (VVC, AV1, VP9, AVC, HEVC).
 
-```bash
-chmod +x transcode.sh
-```
-
-Em seguida, execute o script com as flags apropriadas.
-O script compila e executa o código C para 36 combinações diferentes de threads.
-
-Sintaxe:
+**Uso:**
 
 ```bash
-./transcode.sh -i <video-de-entrada> -r <Arquivo-CSV-de-Saida> -e <encoder> [-o <diretorio-de-saida>]
+./dataset/generate.sh -i <caminho_para_arquivo_yuv> [-s <resolucao>]
 ```
+
+-   `-i`: Caminho para o arquivo de entrada YUV.
+-   `-s`: (Opcional) Resolução do vídeo de saída (ex: `1920x1080`). O padrão é `3840x2160`.
 
 **Exemplo:**
 
 ```bash
-./transcode.sh -i input.mp4 -r benchmarking.csv -e mjpeg -o out
+./dataset/generate.sh -i original.yuv -s 1920x1080
 ```
 
-Isso executará o benchmark e salvará os resultados no arquivo `benchmarking.csv` e os vídeos transcodificados no diretório `out`.
+### 2. Transcodificar um Vídeo (`transcode.sh`)
 
-### Passo 2: Comparar os Vídeos
+Este script compila e executa o programa `transcode.c` para transcodificar um vídeo para um formato específico, testando diferentes combinações de threads de entrada e saída.
 
-O script `compare.sh` permite comparar a qualidade (usando SSIM) e o tamanho dos arquivos de vídeo transcodificados com diferentes codecs.
-
-**Sintaxe:**
+**Uso:**
 
 ```bash
-./compare.sh <codec-de-referencia> <arquivo-de-referencia> <codec2> <arquivo2> [<codec3> <arquivo3> ...]
+./transcode.sh -i <video_de_entrada> -r <arquivo_de_resultados_csv> -e <encoder> [-o <diretorio_de_saida>]
 ```
+
+-   `-i`: Caminho para o vídeo de entrada.
+-   `-r`: Nome do arquivo CSV onde os resultados do benchmark serão salvos.
+-   `-e`: Nome do encoder a ser utilizado (ex: `mjpeg`, `libsvtjpegxs`).
+-   `-o`: (Opcional) Diretório onde os vídeos transcodificados serão salvos. O padrão é o diretório atual.
 
 **Exemplo:**
 
 ```bash
-./compare.sh h264 h264.raw mjpeg out/0_0.mjpeg jpegxs out/0_0.jpegxs
+./transcode.sh -i video.mp4 -r resultados_transcode.csv -e mjpeg -o ./output_transcode
 ```
 
-### Passo 3: Analisar os Resultados
+### 3. Decodificar um Vídeo (`decode.sh`)
 
-Após o término da execução, use o script `analyse.py` para visualizar os resultados:
+Este script compila e executa o programa `decode.c` para decodificar um vídeo, testando o desempenho com diferentes números de threads.
+
+**Uso:**
 
 ```bash
-python3 analyse.py benchmarking.csv
+./decode.sh -i <video_de_entrada> -r <arquivo_de_resultados_csv> [-o <diretorio_de_saida>]
 ```
 
-O script processará os dados e exibirá mapas de calor mostrando o tempo de execução em relação ao número de threads de codificação e decodificação.
+-   `-i`: Caminho para o vídeo de entrada a ser decodificado.
+-   `-r`: Nome do arquivo CSV onde os resultados do benchmark serão salvos.
+-   `-o`: (Opcional) Diretório onde o vídeo decodificado (YUV) será salvo. O padrão é o diretório atual.
 
----
+**Exemplo:**
 
-## Saída Esperada
+```bash
+./decode.sh -i video.mp4 -r resultados_decode.csv -o ./output_decode
+```
 
-- Arquivo CSV com os resultados do benchmark (`benchmarking.csv`)
-- Vídeos transcodificados no diretório especificado
-- Gráficos de mapa de calor exibindo o desempenho de acordo com as configurações de threads
+### 4. Comparar Vídeos (`compare.sh`)
+
+Este script compara um ou mais arquivos de vídeo com um arquivo de referência (geralmente o YUV original), calculando o tamanho do arquivo e a similaridade estrutural (SSIM).
+
+**Uso:**
+
+```bash
+./compare.sh <resolucao> <arquivo_de_referencia> <codec2> <arquivo2> [<codec3> <arquivo3> ...]
+```
+
+-   `<resolucao>`: A resolução dos vídeos (ex: `3840x2160`).
+-   `<arquivo_de_referencia>`: O arquivo de vídeo original (YUV) para comparação.
+-   `<codecX>` e `<arquivoX>`: O codec e o caminho para cada vídeo a ser comparado com o de referência.
+
+**Exemplo:**
+
+```bash
+./compare.sh 3840x2160 original.yuv h264 3840x2160_avc.mp4 hevc 3840x2160_hevc.mp4
+```

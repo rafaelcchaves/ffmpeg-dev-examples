@@ -2,21 +2,38 @@
 
 # --- Configuration ---
 # Set the name of your raw input file
-INPUT_FILE="original.yuv"
+INPUT_FILE=""
+OUT_SIZE="3840x2160" # Default output size
+
+usage() {
+    echo "Usage: $0 -i <input_file_path> [-s <output_size>]"
+    echo "  -i    Path to the raw input file (e.g., original.yuv)"
+    echo "  -s    Output video resolution (e.g., 1920x1080). Defaults to 3840x2160."
+    exit 1
+}
+
+while getopts "i:s:h" opt; do
+    case "$opt" in
+        i) INPUT_FILE="$OPTARG";;
+        s) OUT_SIZE="$OPTARG";;
+        h) usage;;
+        *) usage;;
+    esac
+done
+shift $((OPTIND-1))
+
+if [[ -z "$INPUT_FILE" ]]; then
+    echo "Error: Input file not specified." >&2
+    usage
+fi
 
 # Input parameters
-IN_SIZE="3840x2160"
+IN_SIZE="3840x2160" # This will be overridden by OUT_SIZE in ffmpeg command if different
 IN_PIX_FMT="yuv420p"
 IN_FPS="50"
 
 # Output parameters
 OUT_FPS="50"
-
-if [[ -z $1 ]]; then
-	OUT_SIZE="3840x2160"
-else
-	OUT_SIZE=$1
-fi
 
 # --- End of Configuration ---
 

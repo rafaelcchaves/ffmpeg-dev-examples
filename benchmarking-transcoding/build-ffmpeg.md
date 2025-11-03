@@ -8,7 +8,7 @@ Certifique-se de que você tem as ferramentas de compilação necessárias insta
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y build-essential cmake nasm
+sudo apt-get install -y build-essential cmake nasm libgnutls28-dev
 ```
 
 ## Instalação dos Codecs
@@ -19,14 +19,13 @@ sudo apt-get install -y build-essential cmake nasm
 
 ```bash
 git clone https://github.com/OpenVisualCloud/SVT-JPEG-XS.git
-cd SVT-JPEG-XS
+cd SVT-JPEG-XS/Build/linux
 ./build.sh install --prefix /usr/local/ 
 cd ..
 # Aplicar patch no FFmpeg
 cd <caminho-para-ffmpeg>
 cp <caminho-para-svt-jpeg>/ffmpeg-plugin/libsvtjpegxs* ./libavcodec/ 
 git am --whitespace=fix <caminho-para-svt-jpeg>/ffmpeg-plugin/7.1/*.patch
-cd <caminho-para-projeto>
 ```
 
 ### SVT-AV1
@@ -39,10 +38,9 @@ cd SVT-AV1
 git fetch -t
 git checkout v1.8.0
 mkdir build && cd build
-cmake .. -G"Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+cmake .. -G"Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local/
 make -j $(nproc)
 sudo make install
-cd ../..
 ```
 
 ### dav1d
@@ -69,6 +67,12 @@ sudo apt install nasm libx264-dev
 sudo apt install libx265-dev libnuma-dev
 ```
 
+### VP9
+
+```bash
+sudo apt install libvpx-dev
+```
+
 ### VVC (vvenc e vvdec)
 
 [vvenc](https://github.com/fraunhoferhhi/vvenc) e [vvdec](https://github.com/fraunhoferhhi/vvdec) são um codificador e decodificador VVC.
@@ -78,9 +82,7 @@ sudo apt install libx265-dev libnuma-dev
 ```bash
 git clone https://github.com/fraunhoferhhi/vvenc.git
 cd vvenc
-make install-prefix=/usr/local -j $(nproc)
-sudo make install
-cd ..
+sudo make install install-prefix=/usr/local 
 ```
 
 #### vvdec
@@ -88,11 +90,7 @@ cd ..
 ```bash
 git clone https://github.com/fraunhoferhhi/vvdec.git
 cd vvdec
-mkdir build && cd build
-cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local
-make -j $(nproc)
-sudo make install
-cd ../..
+sudo make install install-prefix=/usr/local 
 ```
 
 ##### Aplicar patch no FFmpeg para suporte ao vvdec
@@ -101,7 +99,6 @@ cd ../..
 wget -O ~/libvvdec.patch https://raw.githubusercontent.com/wiki/fraunhoferhhi/vvdec/data/patch/v7-0001-avcodec-add-external-dec-libvvdec-for-H266-VVC.patch
 cd <caminho-para-ffmpeg>
 patch -p1 < ~/libvvdec.patch
-cd <caminho-para-projeto>
 ```
 
 ## Instalação do FFmpeg
@@ -135,4 +132,5 @@ git checkout n7.1
 
 make -j $(nproc)
 sudo make install
+sudo ldconfig
 ```
