@@ -14,8 +14,8 @@ ffmpeg -i <compressed> -i <original> -lavfi psnr -f null -
 To run ssim:
 ffmpeg -i <compressed> -i <original> -lavfi ssim -f null - 
 To compile and execute:
-gcc transcode.c -o transcode -L/usr/local/lib -I/usr/local/include -lavformat -lavcodec -lavutil -lm
-./transcode -i input.mp4 -o output.mjpeg -s <width>x<height> -f <fps> -e <encoder>
+gcc transcode.c -o transcode -lavformat -lavcodec -lavutil -lm
+./transcode -i <mp4_input_file> -o <output_path> -e <encoder_name>
 To execute tests: 
  */
 #define INBUF_SIZE 10000
