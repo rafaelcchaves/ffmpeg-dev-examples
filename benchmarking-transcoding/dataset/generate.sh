@@ -44,6 +44,12 @@ INPUT_FLAGS="-f rawvideo -r $IN_FPS -pixel_format $IN_PIX_FMT -video_size $IN_SI
 # FFmpeg will process these jobs one by one.
 
 echo "-----------------------------------"
+echo "Starting MJPEG (mjpeg) encode... (Quality 10)"
+ffmpeg $INPUT_FLAGS -vf scale=$OUT_SIZE -c:v mjpeg -q:v 10 -r $OUT_FPS ${OUT_SIZE}_mjpeg.mp4
+
+exit 1
+
+echo "-----------------------------------"
 echo "Starting VVC (vvenc) encode... (Preset medium)"
 ffmpeg $INPUT_FLAGS -vf  scale=$OUT_SIZE -c:v libvvenc -preset medium -r $OUT_FPS ${OUT_SIZE}_vvc.mp4
 

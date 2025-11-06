@@ -30,12 +30,11 @@ echo "threads_in,threads_out,type,time" > "$results_file"
 mkdir -p "$output_dir"
 
 for i in 1 2 4 8 12 16; do
-    for j in 1 2 4 8 12 16; do
-        echo ">>> Building with THREADS_IN=$i THREADS_OUT=$j"
+        echo ">>> Building with THREADS_IN=$i THREADS_OUT=$i"
 
-        bin="transcode_${i}_${j}"
+        bin="transcode_${i}_${i}"
         gcc -O3 -Wall transcode.c -o "$bin"  -I/usr/local/include -L/usr/local/lib \
-        -lavcodec -lavutil -lavformat -lm -DTHREADS_IN="$i" -DTHREADS_OUT="$j"
+        -lavcodec -lavutil -lavformat -lm -DTHREADS_IN="$i" -DTHREADS_OUT="$i"
         ext=""
         if [ "$encoder_name" = "mjpeg" ]; then
             ext="mjpeg"
@@ -51,5 +50,4 @@ for i in 1 2 4 8 12 16; do
         "./$bin" -i "$in_file" -o "$output_path" -e "$encoder_name" >> "$results_file"
 
         rm -f "$bin"
-    done
 done

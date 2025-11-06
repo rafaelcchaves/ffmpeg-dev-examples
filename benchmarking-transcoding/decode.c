@@ -32,14 +32,10 @@ static void decode (AVCodecContext *dec_ctx, AVPacket *inpkt, AVFrame *frame, FI
             fprintf(stderr, "Error during decoding\n");
             exit(1);
         }
-        
-        // Write YUV420p data
-        fwrite(frame->data[0], 1, frame->width * frame->height, outfile);
-        fwrite(frame->data[1], 1, frame->width * frame->height / 4, outfile);
-        fwrite(frame->data[2], 1, frame->width * frame->height / 4, outfile);
 
-	    if(inpkt)
-            	printf("%d, 0,'decoding',%ld\n", THREADS_IN, av_gettime() - frame->pkt_dts);
+        if(inpkt)
+		printf("%d, 0,decoding,%ld\n", THREADS_IN, av_gettime() - frame->pkt_dts);
+        
         av_frame_unref(frame);
     }
 }
@@ -135,7 +131,7 @@ int main(int argc, char** argv){
         av_packet_unref(inpkt);
     }
     decode(incodec_ctx, NULL, frame, output);
-    printf("%d, 0,'total',%ld\n", THREADS_IN, av_gettime() - start_time);
+    printf("%d, 0,total,%ld\n", THREADS_IN, av_gettime() - start_time);
     
     avformat_close_input(&fmt_ctx);
     avcodec_free_context(&incodec_ctx);

@@ -26,7 +26,7 @@ echo "threads_in,threads_out,type,time" > "$results_file"
 
 mkdir -p "$output_dir"
 
-for i in 1 2 4 8 12 16; do
+for i in 1 2 4 8; do
     echo ">>> Building with THREADS_IN=$i"
 
     bin="decode_$i"

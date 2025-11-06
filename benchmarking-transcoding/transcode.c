@@ -65,7 +65,7 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
                 exit(1);
             }
 	    if(inpkt)
-            	printf("%d, %d,'transcoding',%ld\n", THREADS_IN, THREADS_OUT, av_gettime() - outpkt->dts);
+            	printf("%d, %d,transcoding,%ld\n", THREADS_IN, THREADS_OUT, av_gettime() - outpkt->dts);
             fwrite(outpkt->data, 1, outpkt->size, outfile);
             av_packet_unref(outpkt);
         }
@@ -232,7 +232,7 @@ int main(int argc, char** argv){
         av_packet_unref(inpkt);
     }
     transcode(incodec_ctx, outcodec_ctx, NULL, frame, outpkt, output);
-    printf("%d, %d,'total',%ld\n", THREADS_IN, THREADS_OUT, av_gettime() - start_time);
+    printf("%d, %d,total,%ld\n", THREADS_IN, THREADS_OUT, av_gettime() - start_time);
     
     avformat_close_input(&fmt_ctx);
     avcodec_free_context(&outcodec_ctx);
