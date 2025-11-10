@@ -14,6 +14,8 @@
 #define THREADS_IN 0
 #endif
 
+int frames;
+
 static void decode (AVCodecContext *dec_ctx, AVPacket *inpkt, AVFrame *frame, FILE *outfile)
 {
     int ret_dec;
@@ -32,6 +34,7 @@ static void decode (AVCodecContext *dec_ctx, AVPacket *inpkt, AVFrame *frame, FI
             fprintf(stderr, "Error during decoding\n");
             exit(1);
         }
+	frames++;
 
         if(inpkt)
 		printf("%d, 0,decoding,%ld\n", THREADS_IN, av_gettime() - frame->pkt_dts);
@@ -41,7 +44,6 @@ static void decode (AVCodecContext *dec_ctx, AVPacket *inpkt, AVFrame *frame, FI
 }
 
 int main(int argc, char** argv){
-    int ret;
     const char *infilename = NULL, *outfilename = NULL;
     FILE *output;
     AVFormatContext *fmt_ctx = NULL;
@@ -132,6 +134,7 @@ int main(int argc, char** argv){
     }
     decode(incodec_ctx, NULL, frame, output);
     printf("%d, 0,total,%ld\n", THREADS_IN, av_gettime() - start_time);
+    printf("%d, 0,fps,%lf\n", THREADS_IN, (frames*1e6)/(av_gettime() - start_time));
     
     avformat_close_input(&fmt_ctx);
     avcodec_free_context(&incodec_ctx);

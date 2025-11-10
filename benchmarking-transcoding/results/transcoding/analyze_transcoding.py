@@ -4,26 +4,22 @@ import seaborn as sns
 import sys
 import os
 
-def plot_avg_total_time(df):
+def plot_avg_fps(df):
     """
-    Creates and displays a line plot of average total transcoding time vs. total threads.
+    Creates and displays a bar plot of average FPS vs. total threads.
     """
-    df_total = df[df['type'] == 'total'].copy()
-    df_total['total_threads'] = df_total['threads_in'] + df_total['threads_out']
-    df_total['time_sec'] = df_total['time'] / 1_000_000.0
-    
-    avg_total_time = df_total.groupby(['total_threads', 'file_name'])['time_sec'].mean().reset_index()
-    avg_total_time = avg_total_time.sort_values('total_threads')
+    df_fps = df[df['type'] == 'fps'].copy()
+    df_fps['total_threads'] = df_fps['threads_in'] + df_fps['threads_out']
 
     plt.figure(figsize=(12, 8))
-    ax = sns.barplot(data=df_total, x='total_threads', y='time_sec', hue='file_name', errorbar=None)
+    ax = sns.barplot(data=df_fps, x='total_threads', y='time', hue='file_name', errorbar=None)
     
-    ax.set_title('Transcoding Throughput: Total Time vs. Thread Count')
+    ax.set_title('Transcoding Throughput: FPS vs. Thread Count')
     ax.set_xlabel('Total Threads (Decoding + Encoding)')
-    ax.set_ylabel('Average Total Time (s)')
+    ax.set_ylabel('Average Frames Per Second (FPS)')
     ax.grid(True)
     
-    print("Displaying average total time line plot...")
+    print("Displaying average FPS bar plot...")
     plt.show()
 
 def plot_avg_mean_frame_time(df):
@@ -102,7 +98,7 @@ def analyze_transcoding_files(file_paths):
     # --- Plotting ---
     plot_frame_time_boxplot(combined_df)
     plot_avg_mean_frame_time(combined_df)
-    plot_avg_total_time(combined_df)
+    plot_avg_fps(combined_df)
 
 
 if __name__ == "__main__":

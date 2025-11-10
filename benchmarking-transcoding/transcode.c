@@ -27,6 +27,7 @@ To execute tests:
 #endif
 int pts;
 int dts;
+int frames;
 static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket *inpkt, AVFrame *frame, AVPacket *outpkt,
                       FILE *outfile)
 {
@@ -51,6 +52,7 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
             frame->quality = FF_QP2LAMBDA * 2;
         }
         frame->pts = frame->pkt_dts;
+	frames++;
         ret_enc = avcodec_send_frame(enc_ctx, frame);
         if (ret_enc < 0) {
             fprintf(stderr, "Error sending a frame for encoding\n");
@@ -233,6 +235,7 @@ int main(int argc, char** argv){
     }
     transcode(incodec_ctx, outcodec_ctx, NULL, frame, outpkt, output);
     printf("%d, %d,total,%ld\n", THREADS_IN, THREADS_OUT, av_gettime() - start_time);
+    printf("%d, %d,fps,%lf\n", THREADS_IN, THREADS_OUT, (frames*1000000.0)/(av_gettime() - start_time));
     
     avformat_close_input(&fmt_ctx);
     avcodec_free_context(&outcodec_ctx);

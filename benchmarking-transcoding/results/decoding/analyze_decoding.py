@@ -13,24 +13,23 @@ import os
 # Define thread levels for correct sorting on charts
 THREAD_LEVELS = [1, 2, 4, 8, 12, 16]
 
-def plot_total_time(df):
+def plot_fps(df):
     """
-    Creates and displays a line plot of total decoding time by input threads.
+    Creates and displays a bar plot of FPS by input threads.
     """
-    df_total = df[df['type'] == 'total'].copy()
-    df_total['time_sec'] = df_total['time'] / 1_000_000.0
+    df_fps = df[df['type'] == 'fps'].copy()
     
     plt.figure()
-    used_threads = sorted(df_total['threads_in'].unique())
-    df_total['threads_in'] = pd.Categorical(df_total['threads_in'], categories=used_threads, ordered=True)
-    ax = sns.barplot(data=df_total, x='threads_in', y='time_sec', hue='file_name', errorbar=None)
+    used_threads = sorted(df_fps['threads_in'].unique())
+    df_fps['threads_in'] = pd.Categorical(df_fps['threads_in'], categories=used_threads, ordered=True)
+    ax = sns.barplot(data=df_fps, x='threads_in', y='time', hue='file_name', errorbar=None)
     
-    ax.set_title('Decoding Throughput: Total Time vs. Decoding Thread Count')
+    ax.set_title('Decoding Throughput: FPS vs. Decoding Thread Count')
     ax.set_xlabel('Decoding Threads')
-    ax.set_ylabel('Total Time (s)')
+    ax.set_ylabel('Frames Per Second (FPS)')
     ax.grid(True)
     
-    print("Displaying total time line plot...")
+    print("Displaying FPS bar plot...")
     plt.show()
 
 def plot_mean_frame_time(df):
@@ -106,7 +105,7 @@ def analyze_decoding(file_paths):
     # --- Plotting ---
     plot_frame_time_boxplot(combined_df)
     plot_mean_frame_time(combined_df)
-    plot_total_time(combined_df)
+    plot_fps(combined_df)
 
 
 if __name__ == "__main__":
