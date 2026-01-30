@@ -57,8 +57,11 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
 {
     int ret_dec;
     int ret_enc;
-    if(inpkt)
-    	inpkt->dts = av_gettime();
+    if(inpkt){
+        if(dec_ctx->codec_id == AV_CODEC_ID_AV1)
+            inpkt->pts = av_gettime();
+        inpkt->dts = av_gettime();
+    }
     ret_dec = avcodec_send_packet(dec_ctx, inpkt);
     if (ret_dec < 0) {
         fprintf(stderr, "Error sending a packet for decoding\n");
