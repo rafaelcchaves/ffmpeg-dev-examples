@@ -8,6 +8,11 @@
 #include <inttypes.h>
 #include <unistd.h> 
 #include <libavformat/avformat.h>
+#include <libavutil/imgutils.h>
+
+#include <lz4hc.h>
+#include <lz4.h>
+#include <lzo/lzo1x.h>
 
 #define INBUF_SIZE 10000
 #ifndef THREADS_IN
@@ -15,6 +20,19 @@
 #endif
 
 int frames;
+char *compressedFrame = NULL;
+int maxCapacity, decompressedSize;
+
+uint8_t *image_data[4];
+int image_linesize[4];
+int image_bufsize;
+
+typedef struct {
+    int32_t size_decompress;
+    int32_t size_compress;
+    int32_t width, height;
+    int32_t pix_fmt;
+} headerFile;
 
 static void decode (AVCodecContext *dec_ctx, AVPacket *inpkt, AVFrame *frame, FILE *outfile)
 {
@@ -51,7 +69,8 @@ int main(int argc, char** argv){
     
     const AVCodec *incodec;
     AVCodecContext *incodec_ctx= NULL;
-    AVPacket *inpkt;
+    AVPacket *inpkt = NULL;
+    AVFrame *frame = NULL;
     
     int opt;
     while ((opt = getopt(argc, argv, "i:o:")) != -1) {
@@ -77,13 +96,13 @@ int main(int argc, char** argv){
         exit(1);
     }
  
-    AVFrame *frame;
+#ifndef USE_LZ_DECOMPRESS
     frame = av_frame_alloc();
     if (!frame) {
         fprintf(stderr, "Could not allocate video frame\n");
         exit(1);
     }
- 
+
     inpkt = av_packet_alloc();
     if (!inpkt)
         exit(1);
@@ -123,9 +142,12 @@ int main(int argc, char** argv){
         fprintf(stderr, "Could not open codec\n");
         exit(1);
     }
+#endif
     
     int64_t start_time;
     start_time = av_gettime();
+
+#ifndef USE_LZ_DECOMPRESS
     while (av_read_frame(fmt_ctx, inpkt) >= 0) {
         if (inpkt->stream_index == video_stream_index) {
             decode(incodec_ctx, inpkt, frame, output);
@@ -133,6 +155,66 @@ int main(int argc, char** argv){
         av_packet_unref(inpkt);
     }
     decode(incodec_ctx, NULL, frame, output);
+#else
+    int allocated = 0;
+    FILE *infile = fopen(infilename, "rb");
+    if (!infile) {
+        fprintf(stderr, "Could not open %s\n", infilename);
+        exit(1);
+    }
+    while(1){
+        headerFile hf;
+        size_t read_count = fread(&hf, sizeof(headerFile), 1, infile);
+        if (read_count != 1) {
+            if(feof(infile)){
+                fclose(infile);
+                break;
+            }
+            fprintf(stderr, "Erro: Arquivo muito curto ou corrompido (falha ao ler header).\n");
+            fclose(infile);
+            return 1;
+        }
+
+        if(!allocated){
+
+            int ret = av_image_alloc(image_data, image_linesize, hf.width, hf.height, hf.pix_fmt, 1);
+            if (ret < 0) {
+                fprintf(stderr, "Não foi possível alocar o buffer de vídeo decodificado\n");
+                return 1;
+            }
+            image_bufsize = ret;
+
+            maxCapacity = LZ4_compressBound(hf.size_decompress);
+
+            if(!(compressedFrame = (char*)malloc(maxCapacity))){
+                fprintf(stderr, "Error: Could not allocate compressed buffer\n");
+                return 1;
+            }
+            allocated = 1;
+        }
+
+        read_count = fread(compressedFrame, 1, hf.size_compress, infile);
+
+        if (read_count != hf.size_compress) {
+            fprintf(stderr, "Erro: O arquivo terminou antes do esperado.\n");
+            return 1;
+        }
+
+        int64_t st = av_gettime();
+        decompressedSize = LZ4_decompress_safe((const char*)compressedFrame, (char*)(image_data[0]), hf.size_compress, maxCapacity);
+        printf("%d, 0,decoding,%ld\n", THREADS_IN, av_gettime() - st);
+        if(decompressedSize < 0){
+            fprintf(stderr, "Error: Decompress failed\n");
+            return 1;
+        }
+
+        frames++;
+    
+        /* write to rawvideo file */
+        fwrite(image_data[0], 1, image_bufsize, output);
+    }
+#endif
+
     printf("%d, 0,total,%ld\n", THREADS_IN, av_gettime() - start_time);
     printf("%d, 0,fps,%lf\n", THREADS_IN, (frames*1e6)/(av_gettime() - start_time));
     
@@ -141,5 +223,7 @@ int main(int argc, char** argv){
     av_frame_free(&frame);
     av_packet_free(&inpkt);
     fclose(output);
+    free(compressedFrame);
+    av_free(image_data[0]);
     return 0;
 }

@@ -6,3 +6,6 @@
 *.h264
 *.csv
 *.o
+*.lz4
+*.lz4hc
+*.venv/

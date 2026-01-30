@@ -6,12 +6,14 @@ usage() {
 }
 
 output_dir="."
+lz_algorithm=""
 
-while getopts "i:r:o:" opt; do
+while getopts "i:r:o:l:" opt; do
     case "$opt" in
         i) in_file="$OPTARG";;
         r) results_file="$OPTARG";;
         o) output_dir="$OPTARG";;
+        l) lz_algorithm="$OPTARG";;
         *) usage;; 
     esac
 done
@@ -26,17 +28,40 @@ echo "threads_in,threads_out,type,time" > "$results_file"
 
 mkdir -p "$output_dir"
 
-for i in 1 2 4 8; do
-    echo ">>> Building with THREADS_IN=$i"
+if [ "$lz_algorithm" == "" ]; then
 
-    bin="decode_$i"
-    gcc -O3 -Wall decode.c -o "$bin"  -I/usr/local/include -L/usr/local/lib \
-    -lavcodec -lavutil -lavformat -lm -DTHREADS_IN="$i"
+    for i in 1 2 4 8; do
+        echo ">>> Building with THREADS_IN=$i"
 
-    output_path="$output_dir/${i}.yuv"
+        bin="decode_$i"
+        gcc -O3 -Wall -Wno-unused-variable -Wno-unused-function decode.c -o "$bin"  -I/usr/local/include -L/usr/local/lib \
+        -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 -DTHREADS_IN="$i"
 
-    echo ">>> Running $bin ..."
-    "./$bin" -i "$in_file" -o "$output_path" >> "$results_file"
+        output_path="$output_dir/${i}.yuv"
 
-    rm -f "$bin"
-done
+        echo ">>> Running $bin ..."
+        "./$bin" -i "$in_file" -o "$output_path" >> "$results_file"
+
+        rm -f "$bin"
+    done
+
+else
+
+    for i in 1; do
+        echo ">>> Building with THREADS_IN=$i"
+
+        use_lz_decompress="-DUSE_LZ_DECOMPRESS"
+
+        bin="decode_$i"
+        gcc -O3 -Wall -Wno-unused-variable -Wno-unused-function decode.c -o "$bin"  -I/usr/local/include -L/usr/local/lib \
+        -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 -DTHREADS_IN="$i" $use_lz_decompress
+
+        output_path="$output_dir/${i}.yuv"
+
+        echo ">>> Running $bin ..."
+        "./$bin" -i "$in_file" -o "$output_path" >> "$results_file"
+
+        rm -f "$bin"
+    done
+
+fi

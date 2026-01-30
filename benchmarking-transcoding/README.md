@@ -49,7 +49,7 @@ Este script compila e executa o programa `transcode.c` para transcodificar um v�
 
 -   `-i`: Caminho para o vídeo de entrada.
 -   `-r`: Nome do arquivo CSV onde os resultados do benchmark serão salvos.
--   `-e`: Nome do encoder a ser utilizado (ex: `mjpeg`, `libsvtjpegxs`).
+-   `-e`: Nome do encoder a ser utilizado (ex: `mjpeg`, `libsvtjpegxs`, `lz4`, `lz4hc`).
 -   `-o`: (Opcional) Diretório onde os vídeos transcodificados serão salvos. O padrão é o diretório atual.
 
 **Exemplo:**
@@ -65,12 +65,13 @@ Este script compila e executa o programa `decode.c` para decodificar um vídeo, 
 **Uso:**
 
 ```bash
-./decode.sh -i <video_de_entrada> -r <arquivo_de_resultados_csv> [-o <diretorio_de_saida>]
+./decode.sh -i <video_de_entrada> -r <arquivo_de_resultados_csv> [-o <diretorio_de_saida>] [-l <algoritmo_lz>]
 ```
 
 -   `-i`: Caminho para o vídeo de entrada a ser decodificado.
 -   `-r`: Nome do arquivo CSV onde os resultados do benchmark serão salvos.
 -   `-o`: (Opcional) Diretório onde o vídeo decodificado (YUV) será salvo. O padrão é o diretório atual.
+-   `-l`: (Opcional) Descompacta vídeo usando `lz4`, `lz4hc` ou `lzo` quando este foi compactado usando um desses métodos.
 
 **Exemplo:**
 
