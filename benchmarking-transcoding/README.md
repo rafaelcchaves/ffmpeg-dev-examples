@@ -13,6 +13,7 @@ Este projeto contém um conjunto de scripts para realizar benchmarking de transc
 ## Pré-requisitos
 
 -   **FFmpeg**: É necessário ter o FFmpeg instalado com os seguintes codecs habilitados: `libvvenc`, `libsvtav1`, `libvpx-vp9`, `libx264`, `libx265`. Consulte o guia `build-ffmpeg.md` para obter instruções de compilação.
+-   **LZ4 e LZ4HC**: É necessário ter instalado os algoritmos de compactação/descompactação, o LZ4 e o LZ4HC. Para instalar use: `sudo apt install liblz4-dev`.
 -   **Compilador C**: É necessário ter um compilador C (como o `gcc`) para compilar os programas `transcode.c` e `decode.c`.
 -   **Arquivo de Vídeo YUV**: Para o script `dataset/generate.sh`, você precisará de um arquivo de vídeo bruto no formato YUV.
 
@@ -49,7 +50,7 @@ Este script compila e executa o programa `transcode.c` para transcodificar um v�
 
 -   `-i`: Caminho para o vídeo de entrada.
 -   `-r`: Nome do arquivo CSV onde os resultados do benchmark serão salvos.
--   `-e`: Nome do encoder a ser utilizado (ex: `mjpeg`, `libsvtjpegxs`).
+-   `-e`: Nome do encoder a ser utilizado (ex: `mjpeg`, `libsvtjpegxs`, `lz4`, `lz4hc`).
 -   `-o`: (Opcional) Diretório onde os vídeos transcodificados serão salvos. O padrão é o diretório atual.
 
 **Exemplo:**
@@ -65,12 +66,13 @@ Este script compila e executa o programa `decode.c` para decodificar um vídeo, 
 **Uso:**
 
 ```bash
-./decode.sh -i <video_de_entrada> -r <arquivo_de_resultados_csv> [-o <diretorio_de_saida>]
+./decode.sh -i <video_de_entrada> -r <arquivo_de_resultados_csv> [-o <diretorio_de_saida>] [-l <algoritmo_lz>]
 ```
 
 -   `-i`: Caminho para o vídeo de entrada a ser decodificado.
 -   `-r`: Nome do arquivo CSV onde os resultados do benchmark serão salvos.
 -   `-o`: (Opcional) Diretório onde o vídeo decodificado (YUV) será salvo. O padrão é o diretório atual.
+-   `-l`: (Opcional) Descompacta vídeo usando `lz4` ou `lz4hc` quando este foi compactado usando um desses métodos.
 
 **Exemplo:**
 

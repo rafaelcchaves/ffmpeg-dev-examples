@@ -25,25 +25,44 @@ fi
 
 export LD_LIBRARY_PATH="/usr/local/lib"
 
-echo "threads_in,threads_out,type,time" > "$results_file"
+if [ "$encoder_name" = "lz4" ]; then
+    echo "threads_in,threads_out,type,time,acceleration" > "$results_file"
+elif [ "$encoder_name" = "lz4hc" ]; then
+    echo "threads_in,threads_out,type,time,compression_level" > "$results_file"
+else
+    echo "threads_in,threads_out,type,time" > "$results_file"
+fi
 
 mkdir -p "$output_dir"
 
 for i in 1 2 4 8 12 16; do
-        echo ">>> Building with THREADS_IN=$i THREADS_OUT=$i"
 
         bin="transcode_${i}_${i}"
-        gcc -O3 -Wall transcode.c -o "$bin"  -I/usr/local/include -L/usr/local/lib \
-        -lavcodec -lavutil -lavformat -lm -DTHREADS_IN="$i" -DTHREADS_OUT="$i"
         ext=""
+        use_lz_compress=""
+        threads_out=$i
         if [ "$encoder_name" = "mjpeg" ]; then
             ext="mjpeg"
         elif [ "$encoder_name" = "libsvtjpegxs" ]; then
             ext="jpegxs"
+        elif [ "$encoder_name" = "lz4" ]; then
+            ext="lz4"
+            use_lz_compress="-DUSE_LZ_COMPRESS"
+            lz_config=$i
+            threads_out=1 # Não foi implementado LZ4 multi-thread
+        elif [ "$encoder_name" = "lz4hc" ]; then
+            ext="lz4hc"
+            use_lz_compress="-DUSE_LZ_COMPRESS"
+            lz_config=$(( $i < 12 ? $i : 12 )) # LZ4HC suporta no máximo 12
+            threads_out=1 # Não foi implementado LZ4HC multi-thread
         else
             ext="out"
         fi
 
+        echo ">>> Building with THREADS_IN=$i THREADS_OUT=$threads_out"
+
+        gcc -O3 -Wall -Wno-unused-variable transcode.c -o "$bin"  -I/usr/local/include -L/usr/local/lib \
+        -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 -DTHREADS_IN="$i" -DTHREADS_OUT=$threads_out $use_lz_compress -DLZ_CONFIG=$lz_config
         output_path="$output_dir/${i}_${j}.$ext"
 
         echo ">>> Running $bin ..."
