@@ -7,29 +7,48 @@ import os
 # Define profile order and display names
 PROFILE_ORDER = ['low_latency', 'balanced', 'high_throughput']
 PROFILE_DISPLAY_NAMES = {
-    'low_latency': 'Low Latency (1+1 threads)',
-    'balanced': 'Balanced (8+8 threads)',
-    'high_throughput': 'High Throughput (16+16 threads)'
+    'low_latency': 'Low Latency',
+    'balanced': 'Balanced',
+    'high_throughput': 'High Throughput'
 }
+
+# Define codec display names for transformation labels
+CODEC_NAMES = {
+    'avc': 'AVC',
+    'hevc': 'HEVC',
+    'mjpeg': 'MJPEG',
+    'lz4': 'LZ4',
+    'libsvtjpegxs': 'JpegXS'
+}
+
+def get_transformation_label(file_name: str) -> str:
+    """Convert filename to transformation label (e.g., 'hevc_mjpeg' -> 'HEVC -> MJPEG')."""
+    parts = file_name.replace('_', '-').split('-')
+    if len(parts) >= 2:
+        source = CODEC_NAMES.get(parts[0], parts[0].upper())
+        dest = CODEC_NAMES.get(parts[1], parts[1].upper())
+        return f'{source} -> {dest}'
+    return file_name.upper()
 
 def plot_avg_fps_by_profile(df):
     """
     Creates and displays a bar plot of average FPS by profile.
     """
     df_fps = df[df['type'] == 'fps'].copy()
+    df_fps['transformation'] = df_fps['file_name'].apply(get_transformation_label)
 
     plt.figure(figsize=(12, 8))
-    ax = sns.barplot(data=df_fps, x='profile', y='time', hue='file_name',
+    ax = sns.barplot(data=df_fps, x='profile', y='time', hue='transformation',
                      order=PROFILE_ORDER, errorbar=None)
 
-    ax.set_title('Transcoding Throughput: FPS by Thread Profile')
-    ax.set_xlabel('Thread Profile')
+    ax.set_title('Transcoding Throughput: FPS by Profile')
+    ax.set_xlabel('Profile')
     ax.set_ylabel('Average Frames Per Second (FPS)')
     ax.grid(True, axis='y')
 
-    # Set custom x-axis labels
-    ax.set_xticklabels([PROFILE_DISPLAY_NAMES.get(p.get_text(), p.get_text())
-                        for p in ax.get_xticklabels()], rotation=15, ha='right')
+    # Set custom x-axis labels to show only profile names
+    ax.set_xticks(range(len(PROFILE_ORDER)))
+    ax.set_xticklabels([PROFILE_DISPLAY_NAMES[p] for p in PROFILE_ORDER])
 
     print("Displaying average FPS by profile bar plot...")
     plt.tight_layout()
@@ -40,21 +59,22 @@ def plot_avg_mean_frame_time_by_profile(df):
     Creates and displays a bar chart of the average mean frame transcoding time by profile.
     """
     df_frames = df[df['type'] == 'transcoding'].copy()
-    df_mean_agg = df_frames.groupby(['profile', 'file_name'])['time'].mean().reset_index()
+    df_frames['transformation'] = df_frames['file_name'].apply(get_transformation_label)
+    df_mean_agg = df_frames.groupby(['profile', 'transformation'])['time'].mean().reset_index()
     df_mean_agg['time_ms'] = df_mean_agg['time'] / 1000.0
 
     plt.figure(figsize=(12, 8))
-    ax = sns.barplot(data=df_mean_agg, x='profile', y='time_ms', hue='file_name',
+    ax = sns.barplot(data=df_mean_agg, x='profile', y='time_ms', hue='transformation',
                      order=PROFILE_ORDER, errorbar=None)
 
-    ax.set_title('Transcoding Latency: Mean Frame Time by Thread Profile')
-    ax.set_xlabel('Thread Profile')
+    ax.set_title('Transcoding Latency: Mean Frame Time by Profile')
+    ax.set_xlabel('Profile')
     ax.set_ylabel('Average Mean Frame Time (ms)')
     ax.grid(True, axis='y')
 
-    # Set custom x-axis labels
-    ax.set_xticklabels([PROFILE_DISPLAY_NAMES.get(p.get_text(), p.get_text())
-                        for p in ax.get_xticklabels()], rotation=15, ha='right')
+    # Set custom x-axis labels to show only profile names
+    ax.set_xticks(range(len(PROFILE_ORDER)))
+    ax.set_xticklabels([PROFILE_DISPLAY_NAMES[p] for p in PROFILE_ORDER])
 
     print("Displaying average mean frame time by profile bar chart...")
     plt.tight_layout()
@@ -66,41 +86,22 @@ def plot_frame_time_boxplot_by_profile(df):
     """
     df_frames = df[df['type'] == 'transcoding'].copy()
     df_frames['time_ms'] = df_frames['time'] / 1000.0
+    df_frames['transformation'] = df_frames['file_name'].apply(get_transformation_label)
 
     plt.figure(figsize=(12, 8))
-    ax = sns.boxplot(data=df_frames, x='profile', y='time_ms', hue='file_name',
+    ax = sns.boxplot(data=df_frames, x='profile', y='time_ms', hue='transformation',
                      order=PROFILE_ORDER)
 
-    ax.set_title('Transcoding Frame Time Distribution by Thread Profile')
-    ax.set_xlabel('Thread Profile')
+    ax.set_title('Transcoding Frame Time Distribution by Profile')
+    ax.set_xlabel('Profile')
     ax.set_ylabel('Frame Time (ms)')
     ax.grid(True, axis='y')
 
-    # Set custom x-axis labels
-    ax.set_xticklabels([PROFILE_DISPLAY_NAMES.get(p.get_text(), p.get_text())
-                        for p in ax.get_xticklabels()], rotation=15, ha='right')
+    # Set custom x-axis labels to show only profile names
+    ax.set_xticks(range(len(PROFILE_ORDER)))
+    ax.set_xticklabels([PROFILE_DISPLAY_NAMES[p] for p in PROFILE_ORDER])
 
     print("Displaying frame time box plot by profile...")
-    plt.tight_layout()
-    plt.show()
-
-def plot_fps_comparison_by_threads(df):
-    """
-    Creates and displays a bar plot comparing FPS by decoding and encoding thread counts.
-    """
-    df_fps = df[df['type'] == 'fps'].copy()
-
-    plt.figure(figsize=(14, 8))
-    ax = sns.barplot(data=df_fps, x='threads_in', y='time', hue='threads_out',
-                     hue_order=[1, 8, 16])
-
-    ax.set_title('Transcoding Throughput: FPS by Decoder/Encoder Thread Counts')
-    ax.set_xlabel('Decoder Threads')
-    ax.set_ylabel('Average Frames Per Second (FPS)')
-    ax.legend(title='Encoder Threads')
-    ax.grid(True, axis='y')
-
-    print("Displaying FPS comparison by thread counts...")
     plt.tight_layout()
     plt.show()
 
@@ -148,7 +149,6 @@ def analyze_transcoding_files(file_paths):
     plot_frame_time_boxplot_by_profile(combined_df)
     plot_avg_mean_frame_time_by_profile(combined_df)
     plot_avg_fps_by_profile(combined_df)
-    plot_fps_comparison_by_threads(combined_df)
 
 
 if __name__ == "__main__":
