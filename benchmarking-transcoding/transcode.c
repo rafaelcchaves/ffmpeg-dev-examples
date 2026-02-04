@@ -40,6 +40,7 @@ int frames;
 int maxCapacity;
 char *compressedFrame = NULL;
 const char *encoder_name = NULL;
+const char *profile_name = NULL;
 
 uint8_t *image_data[4];
 int image_linesize[4];
@@ -96,7 +97,7 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
                 exit(1);
             }
 	    if(inpkt)
-            	printf("%d, %d,transcoding,%ld\n", THREADS_IN, THREADS_OUT, av_gettime() - outpkt->dts);
+            	printf("%s,%d,%d,transcoding,%ld\n", profile_name, THREADS_IN, THREADS_OUT, av_gettime() - outpkt->dts);
             fwrite(outpkt->data, 1, outpkt->size, outfile);
             av_packet_unref(outpkt);
         }
@@ -113,7 +114,7 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
             compressedSize = LZ4_compress_fast((const char*)image_data[0], compressedFrame, image_bufsize, maxCapacity, LZ_CONFIG);
         
         if(inpkt)
-            printf("%d, %d,transcoding,%ld, %d\n", THREADS_IN, THREADS_OUT, av_gettime() - frame->pkt_dts, LZ_CONFIG);
+            printf("%s,%d,%d,transcoding,%ld,%d\n", profile_name, THREADS_IN, THREADS_OUT, av_gettime() - frame->pkt_dts, LZ_CONFIG);
         if(compressedSize == 0){
             fprintf(stderr, "Error: Compress failed\n");
             exit(1);
@@ -162,7 +163,7 @@ int main(int argc, char** argv){
     AVPacket *outpkt;
     int opt;
     
-    while ((opt = getopt(argc, argv, "i:o:e:")) != -1) { // Removed s and f
+    while ((opt = getopt(argc, argv, "i:o:e:p:")) != -1) {
         switch (opt) {
             case 'i':
                 infilename = optarg;
@@ -173,13 +174,16 @@ int main(int argc, char** argv){
             case 'e':
                 encoder_name = optarg;
                 break;
+            case 'p':
+                profile_name = optarg;
+                break;
             default:
-                fprintf(stderr, "Usage: %s -i <input file> -o <output file> -e <encoder>\n", argv[0]); // Updated usage
+                fprintf(stderr, "Usage: %s -i <input file> -o <output file> -e <encoder> -p <profile>\n", argv[0]);
                 exit(1);
         }
     }
-    if (infilename == NULL || outfilename == NULL || encoder_name == NULL) { // Removed width, height, fps checks
-        fprintf(stderr, "Usage: %s -i <input file> -o <output file> -e <encoder>\n", argv[0]); // Updated usage
+    if (infilename == NULL || outfilename == NULL || encoder_name == NULL || profile_name == NULL) {
+        fprintf(stderr, "Usage: %s -i <input file> -o <output file> -e <encoder> -p <profile>\n", argv[0]);
         exit(1);
     }
     output = fopen(outfilename, "wb");
@@ -309,11 +313,11 @@ int main(int argc, char** argv){
     transcode(incodec_ctx, outcodec_ctx, NULL, frame, outpkt, output);
 
 #ifndef USE_LZ_COMPRESS
-    printf("%d, %d,total,%ld\n", THREADS_IN, THREADS_OUT, av_gettime() - start_time);
-    printf("%d, %d,fps,%lf\n", THREADS_IN, THREADS_OUT, (frames*1000000.0)/(av_gettime() - start_time));
+    printf("%s,%d,%d,total,%ld\n", profile_name, THREADS_IN, THREADS_OUT, av_gettime() - start_time);
+    printf("%s,%d,%d,fps,%lf\n", profile_name, THREADS_IN, THREADS_OUT, (frames*1000000.0)/(av_gettime() - start_time));
 #else
-    printf("%d, %d,total,%ld, %d\n", THREADS_IN, THREADS_OUT, av_gettime() - start_time, LZ_CONFIG);
-    printf("%d, %d,fps,%lf, %d\n", THREADS_IN, THREADS_OUT, (frames*1000000.0)/(av_gettime() - start_time), LZ_CONFIG);
+    printf("%s,%d,%d,total,%ld,%d\n", profile_name, THREADS_IN, THREADS_OUT, av_gettime() - start_time, LZ_CONFIG);
+    printf("%s,%d,%d,fps,%lf,%d\n", profile_name, THREADS_IN, THREADS_OUT, (frames*1000000.0)/(av_gettime() - start_time), LZ_CONFIG);
 #endif
     
     avformat_close_input(&fmt_ctx);

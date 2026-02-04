@@ -10,72 +10,109 @@ except ImportError as e:
 import sys
 import os
 
-# Define thread levels for correct sorting on charts
-THREAD_LEVELS = [1, 2, 4, 8, 12, 16]
+# Define profile order and display names
+PROFILE_ORDER = ['low_latency', 'balanced', 'high_throughput']
+PROFILE_DISPLAY_NAMES = {
+    'low_latency': 'Low Latency (1 thread)',
+    'balanced': 'Balanced (8 threads)',
+    'high_throughput': 'High Throughput (16 threads)'
+}
 
-def plot_fps(df):
+def plot_fps_by_profile(df):
     """
-    Creates and displays a bar plot of FPS by input threads.
+    Creates and displays a bar plot of FPS by profile.
     """
     df_fps = df[df['type'] == 'fps'].copy()
-    
-    plt.figure()
-    used_threads = sorted(df_fps['threads_in'].unique())
-    df_fps['threads_in'] = pd.Categorical(df_fps['threads_in'], categories=used_threads, ordered=True)
-    ax = sns.barplot(data=df_fps, x='threads_in', y='time', hue='file_name', errorbar=None)
-    
-    ax.set_title('Decoding Throughput: FPS vs. Decoding Thread Count')
-    ax.set_xlabel('Decoding Threads')
+
+    plt.figure(figsize=(12, 8))
+    ax = sns.barplot(data=df_fps, x='profile', y='time', hue='file_name',
+                     order=PROFILE_ORDER, errorbar=None)
+
+    ax.set_title('Decoding Throughput: FPS by Thread Profile')
+    ax.set_xlabel('Thread Profile')
     ax.set_ylabel('Frames Per Second (FPS)')
-    ax.grid(True)
-    
-    print("Displaying FPS bar plot...")
+    ax.grid(True, axis='y')
+
+    # Set custom x-axis labels
+    ax.set_xticklabels([PROFILE_DISPLAY_NAMES.get(p.get_text(), p.get_text())
+                        for p in ax.get_xticklabels()], rotation=15, ha='right')
+
+    print("Displaying FPS by profile bar plot...")
+    plt.tight_layout()
     plt.show()
 
-def plot_mean_frame_time(df):
+def plot_mean_frame_time_by_profile(df):
     """
-    Creates and displays a line chart of the mean frame decoding time for each thread level.
+    Creates and displays a bar chart of the mean frame decoding time by profile.
     """
     df_frames = df[df['type'] == 'decoding'].copy()
-    df_frames['time_ms'] = df_frames['time'] / 1000.0
-    
-    plt.figure()
-    used_threads = sorted(df_frames['threads_in'].unique())
-    df_frames['threads_in'] = pd.Categorical(df_frames['threads_in'], categories=used_threads, ordered=True)
-    ax = sns.barplot(data=df_frames, x='threads_in', y='time_ms', hue='file_name', errorbar=None)
-    
-    ax.set_title('Decoding Latency: Mean Frame Time vs. Decoding Thread Count')
-    ax.set_xlabel('Decoding Threads')
+    df_mean_agg = df_frames.groupby(['profile', 'file_name'])['time'].mean().reset_index()
+    df_mean_agg['time_ms'] = df_mean_agg['time'] / 1000.0
+
+    plt.figure(figsize=(12, 8))
+    ax = sns.barplot(data=df_mean_agg, x='profile', y='time_ms', hue='file_name',
+                     order=PROFILE_ORDER, errorbar=None)
+
+    ax.set_title('Decoding Latency: Mean Frame Time by Thread Profile')
+    ax.set_xlabel('Thread Profile')
     ax.set_ylabel('Mean Frame Time (ms)')
-    ax.grid(True)
-    
-    print("Displaying mean frame time line chart...")
+    ax.grid(True, axis='y')
+
+    # Set custom x-axis labels
+    ax.set_xticklabels([PROFILE_DISPLAY_NAMES.get(p.get_text(), p.get_text())
+                        for p in ax.get_xticklabels()], rotation=15, ha='right')
+
+    print("Displaying mean frame time by profile bar chart...")
+    plt.tight_layout()
     plt.show()
 
-def plot_frame_time_boxplot(df):
+def plot_frame_time_boxplot_by_profile(df):
     """
-    Creates and displays a box plot of decoding frame times.
+    Creates and displays a box plot of decoding frame times by profile.
     """
     df_frames = df[df['type'] == 'decoding'].copy()
     df_frames['time_ms'] = df_frames['time'] / 1000.0
 
     plt.figure(figsize=(12, 8))
-    used_threads = sorted(df_frames['threads_in'].unique())
-    df_frames['threads_in'] = pd.Categorical(df_frames['threads_in'], categories=used_threads, ordered=True)
-    ax = sns.boxplot(data=df_frames, x='threads_in', y='time_ms', hue='file_name')
-    
-    ax.set_title('Decoding Frame Time Distribution')
-    ax.set_xlabel('Decoding Threads')
+    ax = sns.boxplot(data=df_frames, x='profile', y='time_ms', hue='file_name',
+                     order=PROFILE_ORDER)
+
+    ax.set_title('Decoding Frame Time Distribution by Thread Profile')
+    ax.set_xlabel('Thread Profile')
     ax.set_ylabel('Frame Time (ms)')
-    ax.grid(True)
-    
-    print("Displaying frame time box plot...")
+    ax.grid(True, axis='y')
+
+    # Set custom x-axis labels
+    ax.set_xticklabels([PROFILE_DISPLAY_NAMES.get(p.get_text(), p.get_text())
+                        for p in ax.get_xticklabels()], rotation=15, ha='right')
+
+    print("Displaying frame time box plot by profile...")
+    plt.tight_layout()
+    plt.show()
+
+def plot_fps_by_threads(df):
+    """
+    Creates and displays a bar plot of FPS by decoder thread count (legacy view).
+    """
+    df_fps = df[df['type'] == 'fps'].copy()
+
+    plt.figure(figsize=(12, 8))
+    used_threads = sorted(df_fps['threads_in'].unique())
+    df_fps['threads_in'] = pd.Categorical(df_fps['threads_in'], categories=used_threads, ordered=True)
+    ax = sns.barplot(data=df_fps, x='threads_in', y='time', hue='file_name', errorbar=None)
+
+    ax.set_title('Decoding Throughput: FPS vs. Decoding Thread Count')
+    ax.set_xlabel('Decoding Threads')
+    ax.set_ylabel('Frames Per Second (FPS)')
+    ax.grid(True, axis='y')
+
+    print("Displaying FPS by thread count bar plot...")
+    plt.tight_layout()
     plt.show()
 
 def analyze_decoding(file_paths):
     """
-    Analyzes the decoding data from multiple files, creating line plots for total time
-    and mean frame time.
+    Analyzes the decoding data from multiple files, creating plots by profile.
     """
     sns.set_theme(style="whitegrid")
     plt.rcParams.update({'font.size': 12})
@@ -92,7 +129,7 @@ def analyze_decoding(file_paths):
         except Exception as e:
             print(f"An error occurred while reading the file '{file_path}': {e}")
             continue
-    
+
     if not all_dfs:
         print("No valid data files found.")
         sys.exit(1)
@@ -101,11 +138,22 @@ def analyze_decoding(file_paths):
 
     # --- Data Cleaning ---
     combined_df['type'] = combined_df['type'].str.strip().str.strip("'")
-    
+
+    # Print summary statistics by profile
+    print("\n=== Summary Statistics by Profile ===")
+    for profile in PROFILE_ORDER:
+        profile_df = combined_df[combined_df['profile'] == profile]
+        if not profile_df.empty:
+            fps_data = profile_df[profile_df['type'] == 'fps']['time']
+            if not fps_data.empty:
+                print(f"\n{PROFILE_DISPLAY_NAMES[profile]}:")
+                print(f"  Average FPS: {fps_data.mean():.2f}")
+
     # --- Plotting ---
-    plot_frame_time_boxplot(combined_df)
-    plot_mean_frame_time(combined_df)
-    plot_fps(combined_df)
+    plot_frame_time_boxplot_by_profile(combined_df)
+    plot_mean_frame_time_by_profile(combined_df)
+    plot_fps_by_profile(combined_df)
+    plot_fps_by_threads(combined_df)
 
 
 if __name__ == "__main__":

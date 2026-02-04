@@ -42,6 +42,18 @@ Este script codifica um arquivo de vídeo YUV bruto em vários formatos (VVC, AV
 
 Este script compila e executa o programa `transcode.c` para transcodificar um vídeo para um formato específico, testando diferentes combinações de threads de entrada e saída.
 
+#### Perfis de Threads
+
+O benchmark utiliza **três perfis de configuração de threads** para avaliar diferentes cenários de uso:
+
+| Perfil | Threads de Decodificação | Threads de Codificação | Descrição |
+|--------|--------------------------|------------------------|-----------|
+| `low_latency` | 1 | 1 | Focado em baixa latência, mínimo overhead de sincronização |
+| `balanced` | 8 | 8 | Configuração equilibrada para uso geral |
+| `high_throughput` | 16 | 16 | Focado em máxima vazão (throughput) |
+
+**Nota:** Para codificadores LZ4 e LZ4HC, a codificação utiliza apenas 1 thread em todos os perfis, pois não há suporte a multi-threading implementado para esses codecs.
+
 **Uso:**
 
 ```bash
@@ -62,6 +74,16 @@ Este script compila e executa o programa `transcode.c` para transcodificar um v�
 ### 3. Decodificar um Vídeo (`decode.sh`)
 
 Este script compila e executa o programa `decode.c` para decodificar um vídeo, testando o desempenho com diferentes números de threads.
+
+#### Perfis de Threads
+
+O benchmark de decodificação utiliza os **mesmos três perfis de configuração**:
+
+| Perfil | Threads de Decodificação | Descrição |
+|--------|--------------------------|-----------|
+| `low_latency` | 1 | Focado em baixa latência |
+| `balanced` | 8 | Configuração equilibrada para uso geral |
+| `high_throughput` | 16 | Focado em máxima vazão (throughput) |
 
 **Uso:**
 
@@ -98,4 +120,80 @@ Este script compara um ou mais arquivos de vídeo com um arquivo de referência 
 
 ```bash
 ./compare.sh 3840x2160 original.yuv h264 3840x2160_avc.mp4 hevc 3840x2160_hevc.mp4
+```
+
+## Formato dos Arquivos de Resultados
+
+Os scripts de benchmark geram arquivos CSV com os seguintes formatos:
+
+### Transcodificação (`transcode.sh`)
+
+```
+profile,threads_in,threads_out,type,time[,compression_level|acceleration]
+```
+
+- `profile`: Nome do perfil (`low_latency`, `balanced`, `high_throughput`)
+- `threads_in`: Número de threads de decodificação
+- `threads_out`: Número de threads de codificação
+- `type`: Tipo de medição (`transcoding`, `total`, `fps`)
+- `time`: Tempo em microssegundos (ou FPS para tipo `fps`)
+- `compression_level`: Nível de compressão (apenas para LZ4HC)
+- `acceleration`: Aceleração (apenas para LZ4)
+
+### Decodificação (`decode.sh`)
+
+```
+profile,threads_in,threads_out,type,time
+```
+
+- `profile`: Nome do perfil (`low_latency`, `balanced`, `high_throughput`)
+- `threads_in`: Número de threads de decodificação
+- `threads_out`: Sempre 0 para decodificação
+- `type`: Tipo de medição (`decoding`, `total`, `fps`)
+- `time`: Tempo em microssegundos (ou FPS para tipo `fps`)
+
+
+
+### 5. Analisar Resultados de Transcodificação (`results/transcoding/analyze_transcoding.py`)
+
+Este script Python gera visualizações e análises dos resultados de benchmark de transcodificação.
+
+**Uso:**
+
+```bash
+python3 results/transcoding/analyze_transcoding.py [arquivo_csv1.csv arquivo_csv2.csv ...]
+```
+
+**Gráficos gerados:**
+- FPS por perfil de threads
+- Tempo médio de frame por perfil
+- Distribuição de tempo de frame (boxplot) por perfil
+- Comparação de FPS por contagem de threads (decoder x encoder)
+
+**Exemplo:**
+
+```bash
+python3 results/transcoding/analyze_transcoding.py resultados_transcode.csv
+```
+
+### 6. Analisar Resultados de Decodificação (`results/decoding/analyze_decoding.py`)
+
+Este script Python gera visualizações e análises dos resultados de benchmark de decodificação.
+
+**Uso:**
+
+```bash
+python3 results/decoding/analyze_decoding.py [arquivo_csv1.csv arquivo_csv2.csv ...]
+```
+
+**Gráficos gerados:**
+- FPS por perfil de threads
+- Tempo médio de frame por perfil
+- Distribuição de tempo de frame (boxplot) por perfil
+- Comparação de FPS por contagem de threads
+
+**Exemplo:**
+
+```bash
+python3 results/decoding/analyze_decoding.py resultados_decode.csv
 ```
