@@ -89,12 +89,18 @@ int main(int argc, char** argv){
                 profile_name = optarg;
                 break;
             default:
-                fprintf(stderr, "Usage: %s -i <input file> -o <output file> -p <profile>\n", argv[0]);
+                fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -p <profile>\n", argv[0]);
+                fprintf(stderr, "  -i  Input video file\n");
+                fprintf(stderr, "  -o  Output YUV file\n");
+                fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
                 exit(1);
         }
     }
     if (infilename == NULL || outfilename == NULL || profile_name == NULL) {
-        fprintf(stderr, "Usage: %s -i <input file> -o <output file> -p <profile>\n", argv[0]);
+        fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -p <profile>\n", argv[0]);
+        fprintf(stderr, "  -i  Input video file\n");
+        fprintf(stderr, "  -o  Output YUV file\n");
+        fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
         exit(1);
     }
     output = fopen(outfilename, "wb");

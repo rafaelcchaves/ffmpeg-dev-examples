@@ -178,12 +178,20 @@ int main(int argc, char** argv){
                 profile_name = optarg;
                 break;
             default:
-                fprintf(stderr, "Usage: %s -i <input file> -o <output file> -e <encoder> -p <profile>\n", argv[0]);
+                fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -e <encoder> -p <profile>\n", argv[0]);
+                fprintf(stderr, "  -i  Input video file\n");
+                fprintf(stderr, "  -o  Output file (encoded video or compressed data)\n");
+                fprintf(stderr, "  -e  Encoder name (e.g., mjpeg, libsvtjpegxs, lz4, lz4hc)\n");
+                fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
                 exit(1);
         }
     }
     if (infilename == NULL || outfilename == NULL || encoder_name == NULL || profile_name == NULL) {
-        fprintf(stderr, "Usage: %s -i <input file> -o <output file> -e <encoder> -p <profile>\n", argv[0]);
+        fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -e <encoder> -p <profile>\n", argv[0]);
+        fprintf(stderr, "  -i  Input video file\n");
+        fprintf(stderr, "  -o  Output file (encoded video or compressed data)\n");
+        fprintf(stderr, "  -e  Encoder name (e.g., mjpeg, libsvtjpegxs, lz4, lz4hc)\n");
+        fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
         exit(1);
     }
     output = fopen(outfilename, "wb");

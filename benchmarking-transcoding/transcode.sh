@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 
 usage() {
-    echo "Usage: $0 -i <input-video> -r <Csv-Result> -e <encoder> [-o <output-dir>]"
+    echo "Usage: $0 -i <input-video> -r <csv-result> -e <encoder> [-o <output-dir>]"
+    echo "  -i  Input video file"
+    echo "  -r  CSV result file"
+    echo "  -e  Encoder (mjpeg, libsvtjpegxs, lz4, lz4hc, or other)"
+    echo "  -o  Output directory (default: .)"
     exit 1
 }
 
