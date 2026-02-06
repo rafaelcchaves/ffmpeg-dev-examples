@@ -84,7 +84,7 @@ else
     echo ">>> Building $profile_name with THREADS_IN=$threads_in_config"
 
     g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
-        decode_lz4.cpp frame_reader.cpp frame_decoder.cpp frame_writer.cpp stats.cpp \
+        decode_lz4/decode_lz4.cpp decode_lz4/frame_reader.cpp decode_lz4/frame_decoder.cpp decode_lz4/frame_writer.cpp decode_lz4/stats.cpp \
         -o "$bin" -I/usr/local/include -L/usr/local/lib \
         -lavutil -lm -llz4
 
