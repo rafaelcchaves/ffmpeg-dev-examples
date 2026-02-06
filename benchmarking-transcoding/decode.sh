@@ -83,8 +83,10 @@ else
     bin="decode_${profile_name}"
     echo ">>> Building $profile_name with THREADS_IN=$threads_in_config"
 
-    g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function decode_lz4.cpp -o "$bin" -I/usr/local/include -L/usr/local/lib \
-    -lavutil -lm -llz4
+    g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
+        decode_lz4.cpp frame_reader.cpp frame_decoder.cpp frame_writer.cpp stats.cpp \
+        -o "$bin" -I/usr/local/include -L/usr/local/lib \
+        -lavutil -lm -llz4
 
     output_path="$output_dir/${profile_name}.yuv"
 

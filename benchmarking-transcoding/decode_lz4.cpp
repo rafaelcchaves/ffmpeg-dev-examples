@@ -1,41 +1,28 @@
 extern "C" {
 #include <libavutil/time.h>
-#include <libavutil/imgutils.h>
-#include <libavutil/mem.h>
-#include <lz4hc.h>
-#include <lz4.h>
 }
 
+#include "decode_lz4.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 
 #ifndef THREADS_IN
 #define THREADS_IN 0
 #endif
 
-int frames;
-const char *profile_name = NULL;
-char *compressedFrame = NULL;
-int maxCapacity, decompressedSize;
-
-uint8_t *image_data[4];
-int image_linesize[4];
-int image_bufsize;
-
-typedef struct {
-    int32_t size_decompress;
-    int32_t size_compress;
-    int32_t width, height;
-    int32_t pix_fmt;
-} headerFile;
-
-int main(int argc, char** argv){
-    const char *infilename = NULL, *outfilename = NULL;
-    FILE *output;
+int main(int argc, char** argv) {
+    const char *infilename = NULL;
+    const char *outfilename = NULL;
+    const char *profile = NULL;
+    FILE *infile = NULL;
+    FILE *outfile = NULL;
+    DecodeContext ctx;
+    int allocated = 0;
+    int frames = 0;
     int opt;
 
+    // Parse argumentos
     while ((opt = getopt(argc, argv, "i:o:p:")) != -1) {
         switch (opt) {
             case 'i':
@@ -45,7 +32,7 @@ int main(int argc, char** argv){
                 outfilename = optarg;
                 break;
             case 'p':
-                profile_name = optarg;
+                profile = optarg;
                 break;
             default:
                 fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -p <profile>\n", argv[0]);
@@ -55,85 +42,98 @@ int main(int argc, char** argv){
                 exit(1);
         }
     }
-    if (infilename == NULL || outfilename == NULL || profile_name == NULL) {
+
+    if (infilename == NULL || outfilename == NULL || profile == NULL) {
         fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -p <profile>\n", argv[0]);
         fprintf(stderr, "  -i  Input LZ compressed file\n");
         fprintf(stderr, "  -o  Output YUV file\n");
         fprintf(stderr, "  -p  Profile name (e.g., low_latency)\n");
         exit(1);
     }
-    output = fopen(outfilename, "wb");
-    if (!output) {
-        fprintf(stderr, "Could not open %s\n", outfilename);
-        exit(1);
+
+    // Inicializa contextos
+    decode_context_init(&ctx);
+
+    // Abre arquivos
+    if (frame_writer_init(outfilename, &outfile) < 0) {
+        return 1;
     }
 
-    int allocated = 0;
-    FILE *infile = fopen(infilename, "rb");
-    if (!infile) {
-        fprintf(stderr, "Could not open %s\n", infilename);
-        exit(1);
+    if (frame_reader_init(infilename, &infile) < 0) {
+        frame_writer_close(outfile);
+        return 1;
     }
 
     int64_t start_time = av_gettime();
 
-    while(1){
-        headerFile hf;
-        size_t read_count = fread(&hf, sizeof(headerFile), 1, infile);
-        if (read_count != 1) {
-            if(feof(infile)){
-                fclose(infile);
-                break;
-            }
-            fprintf(stderr, "Erro: Arquivo muito curto ou corrompido (falha ao ler header).\n");
-            fclose(infile);
+    // Loop principal de decodificacao
+    while (1) {
+        FrameHeader hdr;
+        int ret;
+
+        // Le header do frame
+        ret = frame_reader_read_header(infile, &hdr);
+        if (ret < 0) {
+            frame_reader_close(infile);
+            frame_writer_close(outfile);
+            decode_context_free(&ctx);
             return 1;
         }
+        if (ret == 1) {
+            // EOF
+            break;
+        }
 
-        if(!allocated){
-
-            int ret = av_image_alloc(image_data, image_linesize, hf.width, hf.height, (AVPixelFormat)hf.pix_fmt, 1);
-            if (ret < 0) {
-                fprintf(stderr, "Nao foi possivel alocar o buffer de video decodificado\n");
-                return 1;
-            }
-            image_bufsize = ret;
-
-            maxCapacity = LZ4_compressBound(hf.size_decompress);
-
-            if(!(compressedFrame = (char*)malloc(maxCapacity))){
-                fprintf(stderr, "Error: Could not allocate compressed buffer\n");
+        // Aloca buffers no primeiro frame
+        if (!allocated) {
+            if (decode_context_alloc_buffers(&ctx, &hdr) < 0) {
+                frame_reader_close(infile);
+                frame_writer_close(outfile);
                 return 1;
             }
             allocated = 1;
         }
 
-        read_count = fread(compressedFrame, 1, hf.size_compress, infile);
-
-        if (read_count != (size_t)hf.size_compress) {
-            fprintf(stderr, "Erro: O arquivo terminou antes do esperado.\n");
+        // Le dados compactados
+        if (frame_reader_read_data(infile, ctx.compressed_frame, hdr.size_compress) < 0) {
+            frame_reader_close(infile);
+            frame_writer_close(outfile);
+            decode_context_free(&ctx);
             return 1;
         }
 
+        // Decodifica
         int64_t st = av_gettime();
-        decompressedSize = LZ4_decompress_safe((const char*)compressedFrame, (char*)(image_data[0]), hf.size_compress, maxCapacity);
-        printf("%s,%d,0,decoding,%ld\n", profile_name, THREADS_IN, av_gettime() - st);
-        if(decompressedSize < 0){
-            fprintf(stderr, "Error: Decompress failed\n");
+        if (decode_single_thread(&ctx, ctx.compressed_frame, hdr.size_compress, &hdr) < 0) {
+            frame_reader_close(infile);
+            frame_writer_close(outfile);
+            decode_context_free(&ctx);
             return 1;
         }
+        int64_t decode_time = av_gettime() - st;
+
+        // Escreve frame decodificado
+        if (frame_writer_write_frame(outfile, &ctx) < 0) {
+            frame_reader_close(infile);
+            frame_writer_close(outfile);
+            decode_context_free(&ctx);
+            return 1;
+        }
+
+        // Imprime estatisticas
+        stats_print_frame(profile, THREADS_IN, decode_time);
 
         frames++;
-
-        /* write to rawvideo file */
-        fwrite(image_data[0], 1, image_bufsize, output);
     }
 
-    printf("%s,%d,0,total,%ld\n", profile_name, THREADS_IN, av_gettime() - start_time);
-    printf("%s,%d,0,fps,%lf\n", profile_name, THREADS_IN, (frames*1e6)/(av_gettime() - start_time));
+    // Imprime resumo final
+    int64_t total_time = av_gettime() - start_time;
+    stats_print_summary(profile, THREADS_IN, frames, total_time);
 
-    fclose(output);
-    free(compressedFrame);
-    av_free(image_data[0]);
+    // Cleanup
+    frame_reader_close(infile);
+    frame_writer_close(outfile);
+    decode_context_free(&ctx);
+
     return 0;
 }
