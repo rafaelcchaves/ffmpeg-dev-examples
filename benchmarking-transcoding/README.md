@@ -6,7 +6,7 @@ Este projeto contém um conjunto de scripts para realizar benchmarking de transc
 
 -   `dataset/generate.sh`: Gera arquivos de vídeo codificados a partir de um arquivo YUV bruto.
 -   `transcode.c` / `transcode.sh`: Realiza a transcodificação de um vídeo para diferentes formatos.
--   `decode.c` / `decode.sh`: Realiza a decodificação de um vídeo.
+-   `decode.cpp` / `decode.sh`: Realiza a decodificação de um vídeo.
 -   `compare.sh`: Compara a qualidade de diferentes arquivos de vídeo em relação a um arquivo de referência usando SSIM.
 -   `build-ffmpeg.md`: Guia para compilar o FFmpeg com os codecs necessários.
 
@@ -14,7 +14,7 @@ Este projeto contém um conjunto de scripts para realizar benchmarking de transc
 
 -   **FFmpeg**: É necessário ter o FFmpeg instalado com os seguintes codecs habilitados: `libvvenc`, `libsvtav1`, `libvpx-vp9`, `libx264`, `libx265`. Consulte o guia `build-ffmpeg.md` para obter instruções de compilação.
 -   **LZ4 e LZ4HC**: É necessário ter instalado os algoritmos de compactação/descompactação, o LZ4 e o LZ4HC. Para instalar use: `sudo apt install liblz4-dev`.
--   **Compilador C**: É necessário ter um compilador C (como o `gcc`) para compilar os programas `transcode.c` e `decode.c`.
+-   **Compilador C/C++**: É necessário ter um compilador C (como o `gcc`) para compilar `transcode.c` e um compilador C++ (como o `g++`) para compilar `decode.cpp`.
 -   **Arquivo de Vídeo YUV**: Para o script `dataset/generate.sh`, você precisará de um arquivo de vídeo bruto no formato YUV.
 
 ## Como Usar
@@ -73,7 +73,7 @@ O benchmark utiliza **três perfis de configuração de threads** para avaliar d
 
 ### 3. Decodificar um Vídeo (`decode.sh`)
 
-Este script compila e executa o programa `decode.c` para decodificar um vídeo, testando o desempenho com diferentes números de threads.
+Este script compila e executa o programa `decode.cpp` para decodificar um vídeo, testando o desempenho com diferentes números de threads.
 
 #### Perfis de Threads
 

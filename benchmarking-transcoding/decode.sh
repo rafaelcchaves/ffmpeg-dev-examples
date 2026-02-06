@@ -63,8 +63,8 @@ if [ "$lz_algorithm" == "" ]; then
         bin="decode_${profile_name}"
         echo ">>> Building $profile_name with THREADS_IN=$threads_in_config"
 
-        gcc -O3 -Wall -Wno-unused-variable -Wno-unused-function decode.c -o "$bin"  -I/usr/local/include -L/usr/local/lib \
-        -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 -DTHREADS_IN="$threads_in_config"
+        g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function decode_ffmpeg.cpp -o "$bin" -I/usr/local/include -L/usr/local/lib \
+        -lavcodec -lavutil -lavformat -lm
 
         output_path="$output_dir/${profile_name}.yuv"
 
@@ -83,10 +83,8 @@ else
     bin="decode_${profile_name}"
     echo ">>> Building $profile_name with THREADS_IN=$threads_in_config"
 
-    use_lz_decompress="-DUSE_LZ_DECOMPRESS"
-
-    gcc -O3 -Wall -Wno-unused-variable -Wno-unused-function decode.c -o "$bin"  -I/usr/local/include -L/usr/local/lib \
-    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 -DTHREADS_IN="$threads_in_config" $use_lz_decompress
+    g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function decode_lz4.cpp -o "$bin" -I/usr/local/include -L/usr/local/lib \
+    -lavutil -lm -llz4
 
     output_path="$output_dir/${profile_name}.yuv"
 
