@@ -21,7 +21,7 @@ while getopts "i:r:o:l:p:" opt; do
         o) output_dir="$OPTARG";;
         l) lz_algorithm="$OPTARG";;
         p) profile="$OPTARG";;
-        *) usage;; 
+        *) usage;;
     esac
 done
 
@@ -38,24 +38,11 @@ mkdir -p "$output_dir"
 if [ "$lz_algorithm" == "" ]; then
 
     # Define thread profiles: name:threads_in
-    if [ "$profile" != "" ]; then
-        case "$profile" in
-            low_latency) declare -a profiles=("low_latency:1") ;;
-            balanced) declare -a profiles=("balanced:8") ;;
-            high_throughput) declare -a profiles=("high_throughput:16") ;;
-            *)
-                echo "Invalid profile: $profile"
-                echo "Valid profiles: low_latency, balanced, high_throughput"
-                exit 1
-                ;;
-        esac
-    else
-        declare -a profiles=(
-            "low_latency:1"
-            "balanced:8"
-            "high_throughput:16"
-        )
-    fi
+    declare -a profiles=(
+        "low_latency:1"
+        "balanced:8"
+        "high_throughput:16"
+    )
 
     for profile_config in "${profiles[@]}"; do
         IFS=':' read -r profile_name threads_in_config <<< "$profile_config"
@@ -76,23 +63,44 @@ if [ "$lz_algorithm" == "" ]; then
 
 else
 
-    # Para LZ, apenas low_latency com 1 thread
-    profile_name="low_latency"
-    threads_in_config=1
+    # Para LZ, define profiles: name:threads_in
+    declare -a lz_profiles=(
+        "low_latency:1"
+        "balanced:4"
+        "high_throughput:8"
+    )
 
-    bin="decode_${profile_name}"
-    echo ">>> Building $profile_name with THREADS_IN=$threads_in_config"
+    # Se profile especificado, filtra apenas ele
+    if [ "$profile" != "" ]; then
+        filtered_profiles=()
+        for p in "${lz_profiles[@]}"; do
+            IFS=':' read -r pname pthreads <<< "$p"
+            if [ "$pname" == "$profile" ]; then
+                filtered_profiles+=("$p")
+            fi
+        done
+        lz_profiles=("${filtered_profiles[@]}")
+    fi
 
-    g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
-        decode_lz4/decode_lz4.cpp decode_lz4/frame_reader.cpp decode_lz4/frame_decoder.cpp decode_lz4/frame_writer.cpp decode_lz4/stats.cpp \
-        -o "$bin" -I/usr/local/include -L/usr/local/lib \
-        -lavutil -lm -llz4
+    for profile_config in "${lz_profiles[@]}"; do
+        IFS=':' read -r profile_name threads_in_config <<< "$profile_config"
 
-    output_path="$output_dir/${profile_name}.yuv"
+        bin="decode_${profile_name}"
+        echo ">>> Building $profile_name with THREADS_IN=$threads_in_config"
 
-    echo ">>> Running $bin ..."
-    "./$bin" -i "$in_file" -o "$output_path" -p "$profile_name" >> "$results_file"
+        g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
+            decode_lz4/decode_lz4_main.cpp decode_lz4/decode_lz4_mt.cpp \
+            decode_lz4/frame_reader.cpp decode_lz4/frame_decoder.cpp \
+            decode_lz4/frame_writer.cpp decode_lz4/stats.cpp \
+            -o "$bin" -I/usr/local/include -L/usr/local/lib \
+            -lavutil -lm -llz4 -lpthread
 
-    rm -f "$bin"
+        output_path="$output_dir/${profile_name}.yuv"
+
+        echo ">>> Running: ./$bin -i $in_file -o $output_path -p $profile_name -t $threads_in_config"
+        "./$bin" -i "$in_file" -o "$output_path" -p "$profile_name" -t "$threads_in_config" >> "$results_file" 2>&1
+
+        rm -f "$bin"
+    done
 
 fi

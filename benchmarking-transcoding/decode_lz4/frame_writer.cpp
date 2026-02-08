@@ -11,11 +11,16 @@ int frame_writer_init(const char *filename, FILE **outfile) {
 }
 
 int frame_writer_write_frame(FILE *outfile, const DecodeContext *ctx) {
+    // COMENTADO PARA BENCHMARK SEM I/O
+    (void)outfile;  // Avoid unused warning
+    (void)ctx;  // Avoid unused warning
+    /*
     size_t written = fwrite(ctx->image_data[0], 1, (size_t)ctx->image_bufsize, outfile);
     if (written != (size_t)ctx->image_bufsize) {
         fprintf(stderr, "Error writing frame to output\n");
         return -1;
     }
+    */
     return 0;
 }
 
