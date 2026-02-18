@@ -16,6 +16,9 @@ extern "C" {
 #include <lz4.h>
 }
 
+// Flag global de debug para métricas detalhadas
+extern bool g_debug_mode;
+
 // Estrutura do header do arquivo compactado
 typedef struct {
     int32_t size_decompress;

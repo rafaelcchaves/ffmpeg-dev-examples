@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <atomic>
 
 // ============================================================================
 // Definição das variáveis globais
@@ -47,6 +48,12 @@ FILE *g_output_file = NULL;
 // Configuração
 int g_num_decoder_threads = 0;
 std::string g_profile_name;
+
+// Métricas acumuladas (atómicas para thread-safety)
+std::atomic<int64_t> g_total_read_time{0};
+std::atomic<int64_t> g_total_decode_time{0};
+std::atomic<int> g_read_frame_count{0};
+std::atomic<int> g_decode_frame_count{0};
 
 // ============================================================================
 // Funções de Inicialização
@@ -151,7 +158,10 @@ void *mt_producer_thread(void *arg) {
         FrameHeader header;
         int ret;
 
-        // 1. Ler header do frame
+        // 1. Medir tempo de leitura (header + dados)
+        int64_t read_start = av_gettime();
+
+        // 1a. Ler header do frame
         ret = fread(&header, sizeof(FrameHeader), 1, g_input_file);
         if (ret != 1) {
             if (feof(g_input_file)) {
@@ -177,6 +187,17 @@ void *mt_producer_thread(void *arg) {
         if (ret != header.size_compress) {
             fprintf(stderr, "[Producer] Erro: Arquivo terminou antes do esperado\n");
             break;
+        }
+
+        int64_t read_time = av_gettime() - read_start;
+
+        // 3a. Acumular métricas de leitura
+        g_total_read_time += read_time;
+        g_read_frame_count++;
+
+        // 3b. Imprimir métrica de leitura se debug mode
+        if (g_debug_mode) {
+            printf("[METRICA] READ_FRAME %d %ld\n", sequence_number, read_time);
         }
 
         // 4. Aguarda buffer compartilhado estar vazio
@@ -287,6 +308,15 @@ void *mt_decoder_thread(void *arg) {
 
         int64_t decode_time = av_gettime() - decode_start;
 
+        // 6a. Acumular métricas de decodificação
+        g_total_decode_time += decode_time;
+        g_decode_frame_count++;
+
+        // 6b. Imprimir métrica de decodificação se debug mode
+        if (g_debug_mode) {
+            printf("[METRICA] DECODE_FRAME %d %ld\n", local_frame_info.sequence_number, decode_time);
+        }
+
         // 7. Aguarda sua vez de escrever (escrita sequencial)
         pthread_mutex_lock(&g_write_mutex);
 
@@ -311,8 +341,10 @@ void *mt_decoder_thread(void *arg) {
         pthread_mutex_unlock(&g_write_mutex);
         pthread_cond_broadcast(&g_write_cond);
 
-        // 10. Imprime estatísticas
-        stats_print_frame(g_profile_name.c_str(), g_num_decoder_threads, decode_time);
+        // 10. Imprime estatísticas (apenas se não estiver em modo debug)
+        if (!g_debug_mode) {
+            stats_print_frame(g_profile_name.c_str(), g_num_decoder_threads, decode_time);
+        }
     }
 
     // Decrementa contador de threads ativas e acorda produtor se necessário
@@ -341,6 +373,12 @@ int mt_decode_main(int num_threads, const std::string &input_file,
 
     g_num_decoder_threads = num_threads;
     g_profile_name = profile;
+
+    // Imprime cabeçalho de debug se modo debug ativado
+    if (g_debug_mode) {
+        printf("========== MODO DEBUG ==========\n");
+        printf("Profile: %s | Threads: %d\n\n", profile.c_str(), num_threads);
+    }
 
     // Abre arquivos
     g_input_file = fopen(input_file.c_str(), "rb");
@@ -512,7 +550,33 @@ int mt_decode_main(int num_threads, const std::string &input_file,
     size_t total_frames = g_total_frames_processed;
     pthread_mutex_unlock(&g_state_mutex);
 
-    stats_print_summary(profile.c_str(), num_threads, total_frames, total_time);
+    // Modo debug: imprime resumo detalhado com métricas
+    if (g_debug_mode) {
+        printf("\n========== RESUMO ==========\n");
+        printf("Profile: %s | Threads: %d\n", profile.c_str(), num_threads);
+        printf("Total frames: %zu\n", total_frames);
+        printf("Tempo total: %ld us\n", total_time);
+        printf("FPS: %.1f\n", (total_frames * 1e6) / total_time);
+
+        // Métricas de I/O (leitura)
+        int64_t read_total = g_total_read_time.load();
+        int read_count = g_read_frame_count.load();
+        if (read_count > 0) {
+            printf("[RESUMO] READ_TIME_TOTAL %ld\n", read_total);
+            printf("[RESUMO] READ_TIME_AVG %ld\n", read_total / read_count);
+        }
+
+        // Métricas de decodificação
+        int64_t decode_total = g_total_decode_time.load();
+        int decode_count = g_decode_frame_count.load();
+        if (decode_count > 0) {
+            printf("[RESUMO] DECODE_TIME_TOTAL %ld\n", decode_total);
+            printf("[RESUMO] DECODE_TIME_AVG %ld\n", decode_total / decode_count);
+        }
+    } else {
+        // Modo normal: usa formato padrão
+        stats_print_summary(profile.c_str(), num_threads, total_frames, total_time);
+    }
 
     // Limpeza final
     // 1. Fecha arquivos

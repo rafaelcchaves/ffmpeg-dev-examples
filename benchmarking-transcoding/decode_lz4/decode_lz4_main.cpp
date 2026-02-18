@@ -8,6 +8,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+// Definição da variável global de debug
+bool g_debug_mode = false;
+
 // Declaração da função multithread
 extern int mt_decode_main(int num_threads, const std::string &input_file,
                           const std::string &output_file, const std::string &profile);
@@ -24,9 +27,11 @@ void print_usage(const char *prog_name) {
     fprintf(stderr, "  -o <arquivo>    Arquivo de saida YUV\n");
     fprintf(stderr, "  -p <profile>    Nome do profile (ex: low_latency)\n");
     fprintf(stderr, "  -t <threads>    Numero de threads decodificadoras (default: 1 = single-thread)\n");
+    fprintf(stderr, "  -d              Modo debug: exibe métricas detalhadas de I/O e decodificação\n");
     fprintf(stderr, "\nExemplos:\n");
     fprintf(stderr, "  %s -i input.enc -o output.yuv -p baseline\n", prog_name);
     fprintf(stderr, "  %s -i input.enc -o output.yuv -p low_latency -t 4\n", prog_name);
+    fprintf(stderr, "  %s -i input.enc -o output.yuv -p low_latency -t 4 -d\n", prog_name);
 }
 
 int main(int argc, char **argv) {
@@ -37,7 +42,7 @@ int main(int argc, char **argv) {
     int opt;
 
     // Parse argumentos
-    while ((opt = getopt(argc, argv, "i:o:p:t:")) != -1) {
+    while ((opt = getopt(argc, argv, "i:o:p:t:d")) != -1) {
         switch (opt) {
             case 'i':
                 input_file = optarg;
@@ -50,6 +55,9 @@ int main(int argc, char **argv) {
                 break;
             case 't':
                 num_threads = atoi(optarg);
+                break;
+            case 'd':
+                g_debug_mode = true;
                 break;
             default:
                 print_usage(argv[0]);
