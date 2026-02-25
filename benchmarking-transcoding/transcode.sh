@@ -75,7 +75,7 @@ for profile_config in "${profiles[@]}"; do
 
     echo ">>> Building $profile_name with THREADS_IN=$threads_in_config THREADS_OUT=$threads_out"
 
-    gcc -O3 -Wall -Wno-unused-variable transcode.c -o "$bin"  -I/usr/local/include -L/usr/local/lib \
+    gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o "$bin"  -I/usr/local/include -L/usr/local/lib \
     -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 -DTHREADS_IN="$threads_in_config" -DTHREADS_OUT=$threads_out $use_lz_compress -DLZ_CONFIG=$lz_config
     output_path="$output_dir/${profile_name}.$ext"
 

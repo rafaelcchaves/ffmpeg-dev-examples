@@ -5,16 +5,16 @@ Este projeto contém um conjunto de scripts para realizar benchmarking de transc
 ## Estrutura do Projeto
 
 -   `dataset/generate.sh`: Gera arquivos de vídeo codificados a partir de um arquivo YUV bruto.
--   `transcode.c` / `transcode.sh`: Realiza a transcodificação de um vídeo para diferentes formatos.
--   `decode.cpp` / `decode.sh`: Realiza a decodificação de um vídeo.
--   `compare.sh`: Compara a qualidade de diferentes arquivos de vídeo em relação a um arquivo de referência usando SSIM.
+-   `src/transcode.c` / `transcode.sh`: Realiza a transcodificação de um vídeo para diferentes formatos.
+-   `src/decode.cpp` / `decode.sh`: Realiza a decodificação de um vídeo.
+-   `dataset/compare.sh`: Compara a qualidade de diferentes arquivos de vídeo em relação a um arquivo de referência usando SSIM.
 -   `build-ffmpeg.md`: Guia para compilar o FFmpeg com os codecs necessários.
 
 ## Pré-requisitos
 
 -   **FFmpeg**: É necessário ter o FFmpeg instalado com os seguintes codecs habilitados: `libvvenc`, `libsvtav1`, `libvpx-vp9`, `libx264`, `libx265`. Consulte o guia `build-ffmpeg.md` para obter instruções de compilação.
 -   **LZ4 e LZ4HC**: É necessário ter instalado os algoritmos de compactação/descompactação, o LZ4 e o LZ4HC. Para instalar use: `sudo apt install liblz4-dev`.
--   **Compilador C/C++**: É necessário ter um compilador C (como o `gcc`) para compilar `transcode.c` e um compilador C++ (como o `g++`) para compilar `decode.cpp`.
+-   **Compilador C/C++**: É necessário ter um compilador C (como o `gcc`) para compilar `src/transcode.c` e um compilador C++ (como o `g++`) para compilar `src/decode.cpp` e os módulos em `src/decode_lz4/`.
 -   **Arquivo de Vídeo YUV**: Para o script `dataset/generate.sh`, você precisará de um arquivo de vídeo bruto no formato YUV.
 
 ## Como Usar
@@ -40,7 +40,7 @@ Este script codifica um arquivo de vídeo YUV bruto em vários formatos (VVC, AV
 
 ### 2. Transcodificar um Vídeo (`transcode.sh`)
 
-Este script compila e executa o programa `transcode.c` para transcodificar um vídeo para um formato específico, testando diferentes combinações de threads de entrada e saída.
+Este script compila e executa o programa `src/transcode.c` para transcodificar um vídeo para um formato específico, testando diferentes combinações de threads de entrada e saída.
 
 #### Perfis de Threads
 
@@ -73,7 +73,7 @@ O benchmark utiliza **três perfis de configuração de threads** para avaliar d
 
 ### 3. Decodificar um Vídeo (`decode.sh`)
 
-Este script compila e executa o programa `decode.cpp` para decodificar um vídeo, testando o desempenho com diferentes números de threads.
+Este script compila e executa o programa `src/decode.cpp` (ou os módulos em `src/decode_lz4/` para descompactação LZ4) para decodificar um vídeo, testando o desempenho com diferentes números de threads.
 
 #### Perfis de Threads
 
@@ -102,14 +102,14 @@ O benchmark de decodificação utiliza os **mesmos três perfis de configuraçã
 ./decode.sh -i video.mp4 -r resultados_decode.csv -o ./output_decode
 ```
 
-### 4. Comparar Vídeos (`compare.sh`)
+### 4. Comparar Vídeos (`dataset/compare.sh`)
 
 Este script compara um ou mais arquivos de vídeo com um arquivo de referência (geralmente o YUV original), calculando o tamanho do arquivo e a similaridade estrutural (SSIM).
 
 **Uso:**
 
 ```bash
-./compare.sh <resolucao> <arquivo_de_referencia> <codec2> <arquivo2> [<codec3> <arquivo3> ...]
+./dataset/compare.sh <resolucao> <arquivo_de_referencia> <codec2> <arquivo2> [<codec3> <arquivo3> ...]
 ```
 
 -   `<resolucao>`: A resolução dos vídeos (ex: `3840x2160`).
@@ -119,7 +119,7 @@ Este script compara um ou mais arquivos de vídeo com um arquivo de referência 
 **Exemplo:**
 
 ```bash
-./compare.sh 3840x2160 original.yuv h264 3840x2160_avc.mp4 hevc 3840x2160_hevc.mp4
+./dataset/compare.sh 3840x2160 original.yuv h264 3840x2160_avc.mp4 hevc 3840x2160_hevc.mp4
 ```
 
 ## Formato dos Arquivos de Resultados
