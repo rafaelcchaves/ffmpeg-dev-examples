@@ -91,7 +91,7 @@ run_encode() {
         jpegxs)
             echo "-----------------------------------"
             echo "Starting JPEG XS (libsvtjpegxs) encode..."
-            ffmpeg -y $INPUT_FLAGS -vf scale=$OUT_SIZE -c:v libsvtjpegxs -bpp 8 -r $OUT_FPS ${OUT_SIZE}_jpegxs.mp4
+            ffmpeg -y $INPUT_FLAGS -vf scale=$OUT_SIZE -c:v libsvtjpegxs -bpp 4 -r $OUT_FPS ${OUT_SIZE}_jpegxs.mp4
             ;;
     esac
 }

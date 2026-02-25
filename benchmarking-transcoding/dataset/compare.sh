@@ -26,15 +26,24 @@ while [ "$#" -gt 0 ]; do
     shift 2
 
     echo "Decoding comparison file: $file (codec: $codec)"
-    ffmpeg -loglevel quiet -threads 4 -f "$codec" -i "$file" -y -c:v rawvideo "$raw"
+    ffmpeg -loglevel quiet -i "$file" "$raw"
     if [ $? -ne 0 ]; then echo "Error: Failed to decode comparison file." >&2; exit 1; fi
 
     echo "  $codec (compressed): $(ls -lh "$file" | awk '{print $5}')"
 
-    echo "SSIM ($codec vs $ref_codec):"
-    ssim=$(ffmpeg -loglevel quiet -f rawvideo -s "$resolution" -i "$raw" -f rawvideo -s "$resolution" -i "$ref_file" -lavfi ssim -f null - 2>&1 | grep "All:" | awk -F 'All:' '{print $2}' | awk '{print $1}')
-    echo "  $ssim"
-
-    rm "$raw"
+    echo "SSIM ($codec vs $ref_file):"
+    cmd="ffmpeg -f rawvideo -s $resolution -i $raw -f rawvideo -s $resolution -i $ref_file -lavfi ssim -f null -"
+    $cmd &> /tmp/ssim_output
+    status=$?
+    ssim=$(cat /tmp/ssim_output)
+    if [ $status -ne 0 ]; then
+        printf "%s\n" "$cmd"
+        grep Error /tmp/ssim_output
+        rm -f "$raw"
+        exit 1
+    fi
+    grep SSIM /tmp/ssim_output
+    rm -f /tmp/ssim_output
+    rm $raw
     i=$((i+1))
 done
