@@ -58,6 +58,31 @@ def plot_fps_by_profile(df):
     plt.tight_layout()
     plt.show()
 
+def plot_cpu_by_profile(df):
+    """
+    Creates and displays a bar plot of CPU usage by profile.
+    """
+    df_cpu = df[df['type'] == 'cpu'].copy()
+    df_cpu['transformation'] = df_cpu['file_name'].apply(get_transformation_label)
+
+    plt.figure(figsize=(12, 8))
+    ax = sns.barplot(data=df_cpu, x='profile', y='time', hue='transformation',
+                     order=PROFILE_ORDER, errorbar=None)
+
+    ax.set_title('CPU Usage During Decoding by Profile')
+    ax.set_xlabel('Profile')
+    ax.set_ylabel('CPU Usage (%)')
+    ax.grid(True, axis='y')
+    ax.set_ylim(0, 100)  # CPU percentage is always 0-100
+
+    # Set custom x-axis labels to show only profile names
+    ax.set_xticks(range(len(PROFILE_ORDER)))
+    ax.set_xticklabels([PROFILE_DISPLAY_NAMES[p] for p in PROFILE_ORDER])
+
+    print("Displaying CPU usage by profile bar plot...")
+    plt.tight_layout()
+    plt.show()
+
 def plot_mean_frame_time_by_profile(df):
     """
     Creates and displays a bar chart of the mean frame decoding time by profile.
@@ -144,14 +169,18 @@ def analyze_decoding(file_paths):
         profile_df = combined_df[combined_df['profile'] == profile]
         if not profile_df.empty:
             fps_data = profile_df[profile_df['type'] == 'fps']['time']
+            cpu_data = profile_df[profile_df['type'] == 'cpu']['time']
+            print(f"\n{PROFILE_DISPLAY_NAMES[profile]}:")
             if not fps_data.empty:
-                print(f"\n{PROFILE_DISPLAY_NAMES[profile]}:")
                 print(f"  Average FPS: {fps_data.mean():.2f}")
+            if not cpu_data.empty:
+                print(f"  Average CPU Usage: {cpu_data.mean():.1f}%")
 
     # --- Plotting ---
     plot_frame_time_boxplot_by_profile(combined_df)
     plot_mean_frame_time_by_profile(combined_df)
     plot_fps_by_profile(combined_df)
+    plot_cpu_by_profile(combined_df)
 
 
 if __name__ == "__main__":

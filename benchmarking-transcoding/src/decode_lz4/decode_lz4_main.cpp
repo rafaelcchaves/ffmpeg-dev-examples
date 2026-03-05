@@ -4,6 +4,7 @@
 // ============================================================================
 
 #include "decode_lz4.h"
+#include "../cpu_stats.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -98,6 +99,7 @@ int st_decode_main(const std::string &input_file,
     DecodeContext ctx;
     int allocated = 0;
     int frames = 0;
+    CpuStats cpu_start, cpu_end;
 
     // Inicializa contexto
     decode_context_init(&ctx);
@@ -113,6 +115,7 @@ int st_decode_main(const std::string &input_file,
     }
 
     int64_t start_time = av_gettime();
+    cpu_stats_read(&cpu_start);
 
     // Loop principal de decodificação
     while (1) {
@@ -176,7 +179,11 @@ int st_decode_main(const std::string &input_file,
 
     // Imprime resumo final
     int64_t total_time = av_gettime() - start_time;
+    cpu_stats_read(&cpu_end);
+    double cpu_usage = cpu_stats_calculate_usage(&cpu_start, &cpu_end);
+
     stats_print_summary(profile.c_str(), 0, frames, total_time);
+    stats_print_cpu(profile.c_str(), 0, cpu_usage);
 
     // Cleanup
     frame_reader_close(infile);

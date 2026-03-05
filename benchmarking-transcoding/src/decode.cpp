@@ -10,6 +10,7 @@ extern "C" {
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "cpu_stats.h"
 
 #define INBUF_SIZE 10000
 #ifndef THREADS_IN
@@ -140,7 +141,10 @@ int main(int argc, char** argv){
     }
 
     int64_t start_time;
+    CpuStats cpu_start, cpu_end;
+
     start_time = av_gettime();
+    cpu_stats_read(&cpu_start);
 
     while (av_read_frame(fmt_ctx, inpkt) >= 0) {
         if (inpkt->stream_index == video_stream_index) {
@@ -150,8 +154,12 @@ int main(int argc, char** argv){
     }
     decode(incodec_ctx, NULL, frame, output);
 
+    cpu_stats_read(&cpu_end);
+    double cpu_usage = cpu_stats_calculate_usage(&cpu_start, &cpu_end);
+
     printf("%s,%d,0,total,%ld\n", profile_name, THREADS_IN, av_gettime() - start_time);
     printf("%s,%d,0,fps,%lf\n", profile_name, THREADS_IN, (frames*1e6)/(av_gettime() - start_time));
+    printf("%s,%d,0,cpu,%lf\n", profile_name, THREADS_IN, cpu_usage);
 
     avformat_close_input(&fmt_ctx);
     avcodec_free_context(&incodec_ctx);

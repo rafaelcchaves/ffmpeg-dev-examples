@@ -4,6 +4,7 @@
 // ============================================================================
 
 #include "decode_lz4.h"
+#include "../cpu_stats.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -370,6 +371,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
     FrameHeader first_header;
     int ret;
     int64_t total_start_time;
+    CpuStats cpu_start, cpu_end;
 
     g_num_decoder_threads = num_threads;
     g_profile_name = profile;
@@ -505,6 +507,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
     }
 
     total_start_time = av_gettime();
+    cpu_stats_read(&cpu_start);
 
     // Cria thread produtora
     if (pthread_create(&producer_thread, NULL, mt_producer_thread, NULL) != 0) {
@@ -544,6 +547,8 @@ int mt_decode_main(int num_threads, const std::string &input_file,
     }
 
     int64_t total_time = av_gettime() - total_start_time;
+    cpu_stats_read(&cpu_end);
+    double cpu_usage = cpu_stats_calculate_usage(&cpu_start, &cpu_end);
 
     // Imprime resumo
     pthread_mutex_lock(&g_state_mutex);
@@ -557,6 +562,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
         printf("Total frames: %zu\n", total_frames);
         printf("Tempo total: %ld us\n", total_time);
         printf("FPS: %.1f\n", (total_frames * 1e6) / total_time);
+        printf("[RESUMO] CPU_USAGE %.1f\n", cpu_usage);
 
         // Métricas de I/O (leitura)
         int64_t read_total = g_total_read_time.load();
@@ -576,6 +582,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
     } else {
         // Modo normal: usa formato padrão
         stats_print_summary(profile.c_str(), num_threads, total_frames, total_time);
+        stats_print_cpu(profile.c_str(), num_threads, cpu_usage);
     }
 
     // Limpeza final

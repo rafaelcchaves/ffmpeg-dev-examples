@@ -68,6 +68,7 @@ void frame_writer_close(FILE *outfile);
 // Interfaces do modulo stats
 void stats_print_frame(const char *profile, int threads, int64_t decode_time_us);
 void stats_print_summary(const char *profile, int threads, int frames, int64_t total_time_us);
+void stats_print_cpu(const char *profile, int threads, double cpu_usage);
 
 // ============================================================================
 // Estruturas para Decodificação Multithread (Buffer Compartilhado Simples)
