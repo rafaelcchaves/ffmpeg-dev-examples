@@ -51,36 +51,71 @@ for profile_config in "${profiles[@]}"; do
 
     bin="transcode_${profile_name}"
     ext=""
-    use_lz_compress=""
     threads_out=$threads_out_config
     lz_config=1
 
+    # Determina extensão e configurações específicas do encoder
     if [ "$encoder_name" = "mjpeg" ]; then
         ext="mjpeg"
     elif [ "$encoder_name" = "libsvtjpegxs" ]; then
         ext="jpegxs"
     elif [ "$encoder_name" = "lz4" ]; then
         ext="lz4"
-        use_lz_compress="-DUSE_LZ_COMPRESS"
-        lz_config=$threads_in_config
-        threads_out=1 # Não foi implementado LZ4 multi-thread
+        lz_config=1
     elif [ "$encoder_name" = "lz4hc" ]; then
         ext="lz4hc"
-        use_lz_compress="-DUSE_LZ_COMPRESS"
-        lz_config=$(( $threads_in_config < 12 ? $threads_in_config : 12 )) # LZ4HC suporta no máximo 12
-        threads_out=1 # Não foi implementado LZ4HC multi-thread
+        lz_config=$(( threads_in_config < 12 ? threads_in_config : 12 )) # LZ4HC suporta no máximo 12
     else
         ext="out"
     fi
 
-    echo ">>> Building $profile_name with THREADS_IN=$threads_in_config THREADS_OUT=$threads_out"
-
-    gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o "$bin"  -I/usr/local/include -L/usr/local/lib \
-    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 -DTHREADS_IN="$threads_in_config" -DTHREADS_OUT=$threads_out $use_lz_compress -DLZ_CONFIG=$lz_config
     output_path="$output_dir/${profile_name}.$ext"
 
-    echo ">>> Running $bin ..."
-    "./$bin" -i "$in_file" -o "$output_path" -e "$encoder_name" -p "$profile_name" >> "$results_file"
+    # =========================================================================
+    # Escolha entre single-thread (transcode.c) e multithread (transcode_lz4_mt)
+    # =========================================================================
+
+    if [ "$encoder_name" = "lz4" ] || [ "$encoder_name" = "lz4hc" ]; then
+        # LZ4/LZ4HC: usar multithread se threads_out > 1, senão single-thread
+        if [ "$threads_out" -gt 1 ]; then
+            # Multithread LZ4/LZ4HC
+            echo ">>> Building $profile_name (multithread) with THREADS_IN=$threads_in_config THREADS_OUT=$threads_out"
+
+            gcc -O3 -Wall -Wno-unused-variable \
+                -DTHREADS_IN="$threads_in_config" -DTHREADS_OUT="$threads_out" \
+                src/transcode_lz4/transcode_lz4_main.c \
+                src/transcode_lz4/transcode_lz4_mt.c \
+                src/avbuffer_queue.c \
+                src/cpu_stats.cpp \
+                -o "$bin" \
+                -I/usr/local/include -L/usr/local/lib \
+                -lavcodec -lavutil -lavformat -lm -llz4 -lpthread
+
+            echo ">>> Running $bin (multithread) ..."
+            "./$bin" -i "$in_file" -o "$output_path" -e "$encoder_name" -l "$lz_config" -p "$profile_name" >> "$results_file"
+        else
+            # Single-thread LZ4/LZ4HC (usando transcode.c)
+            echo ">>> Building $profile_name (single-thread) with THREADS_IN=$threads_in_config THREADS_OUT=$threads_out"
+
+            gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o "$bin" -I/usr/local/include -L/usr/local/lib \
+                -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
+                -DTHREADS_IN="$threads_in_config" -DTHREADS_OUT=$threads_out \
+                -DUSE_LZ_COMPRESS -DLZ_CONFIG=$lz_config
+
+            echo ">>> Running $bin (single-thread) ..."
+            "./$bin" -i "$in_file" -o "$output_path" -e "$encoder_name" -p "$profile_name" >> "$results_file"
+        fi
+    else
+        # Outros encoders (mjpeg, libsvtjpegxs, etc.) - sempre usar transcode.c
+        echo ">>> Building $profile_name with THREADS_IN=$threads_in_config THREADS_OUT=$threads_out"
+
+        gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o "$bin" -I/usr/local/include -L/usr/local/lib \
+            -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
+            -DTHREADS_IN="$threads_in_config" -DTHREADS_OUT=$threads_out
+
+        echo ">>> Running $bin ..."
+        "./$bin" -i "$in_file" -o "$output_path" -e "$encoder_name" -p "$profile_name" >> "$results_file"
+    fi
 
     rm -f "$bin"
 done

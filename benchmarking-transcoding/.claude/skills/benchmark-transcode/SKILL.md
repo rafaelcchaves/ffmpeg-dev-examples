@@ -1,20 +1,23 @@
 ---
 name: benchmark-transcode
-description: Executar benchmarks de transcodificação de vídeo com diferentes encoders e perfis de threads. Use para medir desempenho de transcodificação e analisar resultados.
+description: Executar benchmarks de transcodificação de vídeo com diferentes encoders e perfis de threads. Suporta LZ4/LZ4HC multithread. Use para medir desempenho de transcodificação e analisar resultados.
 ---
 
 # Benchmark de Transcodificação
 
 ## Visão Geral
 
-O script `transcode.sh` executa benchmarks de transcodificação de vídeo, testando diferentes encoders e perfis de threads. Ele compila e executa o código em `src/transcode.c` para cada configuração de perfil.
+O script `transcode.sh` executa benchmarks de transcodificação de vídeo, testando diferentes encoders e perfis de threads. Para LZ4/LZ4HC, utiliza automaticamente a versão multithread quando `threads_out > 1`.
 
 ### Arquivos Relacionados
 
 | Arquivo | Descrição |
 |---------|-----------|
 | `transcode.sh` | Script principal de orquestração |
-| `src/transcode.c` | Código C de transcodificação (FFmpeg + LZ4) |
+| `src/transcode.c` | Código C de transcodificação single-thread (FFmpeg + LZ4) |
+| `src/transcode_lz4/transcode_lz4_mt.c` | Código C de transcodificação multithread (LZ4/LZ4HC) |
+| `src/transcode_lz4/transcode_lz4_main.c` | Ponto de entrada para versão multithread |
+| `src/avbuffer_queue.c` | Fila thread-safe para buffers AVBufferRef |
 | `results/transcoding/analyze_transcoding.py` | Análise e visualização dos resultados |
 
 ---
@@ -59,11 +62,13 @@ O script `transcode.sh` executa benchmarks de transcodificação de vídeo, test
 
 **LZ4 (`lz4`)**
 - Compressão sem perdas muito rápida
+- Suporta multithread quando `threads_out > 1`
 - Usa aceleração configurável via `LZ_CONFIG`
 - Gera arquivo customizado com header por frame
 
 **LZ4HC (`lz4hc`)**
 - LZ4 com alta compressão (High Compression)
+- Suporta multithread quando `threads_out > 1`
 - Nível de compressão máximo: 12
 - Trade-off: menor tamanho, maior tempo de compressão
 
@@ -79,11 +84,14 @@ O script testa automaticamente três perfis de threading:
 | `balanced` | 8 | 8 | Equilíbrio latência/throughput |
 | `high_throughput` | 16 | 16 | Máximo throughput |
 
-### Notas sobre LZ4/LZ4HC
+### Seleção de Binário para LZ4/LZ4HC
 
-Para encoders LZ4, os perfis têm comportamento especial:
-- **LZ4**: `threads_out` é sempre 1 (não implementado multi-thread)
-- **LZ4HC**: Nível de compressão limitado a 12
+O script escolhe automaticamente entre single-thread e multithread:
+
+| threads_out | Binário | Descrição |
+|-------------|---------|-----------|
+| 1 | `transcode.c` | Single-thread clássico |
+| > 1 | `transcode_lz4_mt` | Multithread producer-consumer |
 
 ---
 
@@ -180,10 +188,10 @@ pip install pandas matplotlib seaborn
   -o output/
 ```
 
-### Exemplo 3: Compressão LZ4
+### Exemplo 3: Compressão LZ4 (Multithread)
 
 ```bash
-# Compressão rápida com LZ4
+# Compressão com LZ4 - balanced e high_throughput usam multithread
 ./transcode.sh \
   -i dataset/videos/foreman.mp4 \
   -r results/transcoding/h264-lz4.csv \
@@ -203,9 +211,9 @@ python3 results/transcoding/analyze_transcoding.py \
 
 ---
 
-## Arquitetura do Código (src/transcode.c)
+## Arquitetura do Código
 
-### Fluxo de Processamento
+### Single-Thread (transcode.c)
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
@@ -215,14 +223,47 @@ python3 results/transcoding/analyze_transcoding.py \
                                          └─────────────┘
 ```
 
-### Funções Principais
+### Multithread (transcode_lz4_mt)
+
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│  Producer   │ ──► │  FrameQueue  │ ──► │  Encoders   │ ──► Output
+│  Thread     │     │  (thread-    │     │  (múltiplas │     (sequencial)
+│             │     │   safe)      │     │   threads)  │
+└─────────────┘     └──────────────┘     └─────────────┘
+      │                                          │
+      ▼                                          ▼
+  Decodifica                               Comprime LZ4
+  (FFmpeg)                                 e escreve
+```
+
+### Componentes Multithread
+
+| Componente | Arquivo | Descrição |
+|------------|---------|-----------|
+| Producer Thread | `transcode_lz4_mt.c` | Decodifica frames com FFmpeg |
+| FrameQueue | `avbuffer_queue.c` | Fila thread-safe com buffer + metadata |
+| Encoder Threads | `transcode_lz4_mt.c` | Compressão LZ4/LZ4HC paralela |
+| Write Mutex | `transcode_lz4_mt.c` | Garante escrita sequencial |
+
+### Funções Principais (transcode.c)
 
 | Função | Descrição |
 |--------|-----------|
 | `main()` | Inicialização, parsing de argumentos, loop principal |
 | `transcode()` | Decodifica frame, codifica no formato de saída |
 
+### Funções Principais (transcode_lz4_mt)
+
+| Função | Descrição |
+|--------|-----------|
+| `mt_encode_main()` | Orquestra threads e sincronização |
+| `mt_producer_thread()` | Decodifica frames e coloca na fila |
+| `mt_encoder_thread()` | Retira frames, comprime e escreve |
+
 ### Macros de Compilação
+
+#### transcode.c
 
 | Macro | Default | Descrição |
 |-------|---------|-----------|
@@ -230,6 +271,45 @@ python3 results/transcoding/analyze_transcoding.py \
 | `THREADS_OUT` | 0 | Threads de codificação |
 | `USE_LZ_COMPRESS` | - | Habilita compressão LZ4 |
 | `LZ_CONFIG` | 1 | Nível de aceleração/compressão LZ4 |
+
+#### transcode_lz4_mt
+
+| Macro | Default | Descrição |
+|-------|---------|-----------|
+| `THREADS_IN` | 0 | Threads de decodificação FFmpeg |
+| `THREADS_OUT` | 1 | Threads codificadoras LZ4 |
+
+---
+
+## Compilação Manual
+
+### Single-Thread (transcode.c)
+
+```bash
+# LZ4
+gcc -O3 -DTHREADS_IN=4 -DTHREADS_OUT=1 -DUSE_LZ_COMPRESS -DLZ_CONFIG=1 \
+    src/transcode.c -o transcode -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2
+
+# LZ4HC
+gcc -O3 -DTHREADS_IN=4 -DTHREADS_OUT=1 -DUSE_LZ_COMPRESS -DLZ_CONFIG=9 \
+    src/transcode.c -o transcode -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2
+```
+
+### Multithread (transcode_lz4_mt)
+
+```bash
+# LZ4 com 8 threads codificadoras
+gcc -O3 -DTHREADS_IN=4 -DTHREADS_OUT=8 \
+    src/transcode_lz4/transcode_lz4_main.c \
+    src/transcode_lz4/transcode_lz4_mt.c \
+    src/avbuffer_queue.c \
+    src/cpu_stats.cpp \
+    -o transcode_lz4_mt \
+    -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm -llz4 -lpthread
+```
 
 ---
 
