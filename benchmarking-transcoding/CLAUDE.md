@@ -1,0 +1,409 @@
+# Manual de Referência - Benchmarking de Transcodificação de Vídeo
+
+## Sumário do Repositório
+
+Este projeto implementa um sistema de benchmarking para transcodificação e decodificação de vídeo utilizando FFmpeg e compressão LZ4. O foco é medir desempenho de CPU com arquiteturas single-thread e multithread.
+
+### Características Principais
+
+- **Transcodificação**: Suporte a MJPEG, JPEG XS, LZ4 e LZ4HC
+- **Decodificação**: FFmpeg padrão e LZ4 multithread
+- **Arquitetura Multithread**: Producer-consumer com semáforos
+- **Flag de Escrita**: Permite benchmarks sem I/O de disco (padrão)
+- **Perfis de Threads**: low_latency, balanced, high_throughput
+
+### Estrutura do Projeto
+
+```
+benchmarking-transcoding/
+├── src/
+│   ├── transcode.c              # Transcodificação single-thread
+│   ├── decode.cpp               # Decodificação FFmpeg
+│   ├── transcode_lz4/           # Transcodificação LZ4 multithread
+│   │   ├── transcode_lz4_main.c
+│   │   └── transcode_lz4_mt.c
+│   ├── decode_lz4/              # Decodificação LZ4 multithread
+│   │   ├── decode_lz4_main.cpp
+│   │   ├── decode_lz4_mt.cpp
+│   │   ├── frame_reader.cpp
+│   │   ├── frame_decoder.cpp
+│   │   └── frame_writer.cpp
+│   ├── avbuffer_queue.c         # Fila thread-safe
+│   └── cpu_stats.cpp            # Coleta de uso de CPU
+├── dataset/                     # Vídeos de teste
+├── results/                     # Scripts de análise
+│   ├── transcoding/
+│   └── decoding/
+├── transcode.sh                 # Script de benchmark de transcodificação
+└── decode.sh                    # Script de benchmark de decodificação
+```
+
+---
+
+## Dataset de Vídeos
+
+### Localização
+
+Os vídeos de teste estão em: `dataset/`
+
+### Arquivos Disponíveis
+
+| Arquivo | Descrição | Tamanho |
+|---------|-----------|---------|
+| `original.yuv` | Vídeo YUV bruto 4K (3840x2160) | ~7.5 GB |
+| `3840x2160.lz4` | Vídeo comprimido com LZ4 | ~4.2 GB |
+| `ssim95_avc.mp4` | H.264/AVC com SSIM >= 95 | ~16 MB |
+| `ssim95_hevc.mp4` | H.265/HEVC com SSIM >= 95 | ~7 MB |
+| `ssim95_mjpeg.mp4` | MJPEG com SSIM >= 95 | ~185 MB |
+| `ssim95_jpegxs.mp4` | JPEG XS com SSIM >= 95 | ~311 MB |
+| `ssim95_vp9.mp4` | VP9 com SSIM >= 95 | ~9 MB |
+
+### Gerando Novos Vídeos
+
+```bash
+# Gerar vídeos a partir de YUV
+./dataset/generate.sh -i dataset/original.yuv -s 1920x1080
+
+# Comparar qualidade SSIM
+./dataset/compare.sh 3840x2160 dataset/original.yuv \
+    h264 dataset/ssim95_avc.mp4 \
+    hevc dataset/ssim95_hevc.mp4
+```
+
+---
+
+## Manual de Compilação
+
+### Pré-requisitos
+
+```bash
+# Ubuntu/Debian
+sudo apt install build-essential liblz4-dev
+
+# FFmpeg compilado (ver build-ffmpeg.md)
+# - libavcodec, libavutil, libavformat
+# - codecs: libsvtjpegxs, mjpeg
+```
+
+### Compilação via Scripts (Recomendado)
+
+Os scripts `transcode.sh` e `decode.sh` compilam automaticamente:
+
+```bash
+# Benchmark de transcodificação
+./transcode.sh -i video.mp4 -r results.csv -e lz4 -o output/
+
+# Benchmark de decodificação
+./decode.sh -i video.mp4 -r results.csv -o output/
+```
+
+### Compilação Manual
+
+#### Transcodificação - LZ4/LZ4HC Multithread
+
+```bash
+# Sem escrita (padrão - benchmark puro)
+gcc -O3 -Wall -Wno-unused-variable \
+    -DTHREADS_IN=8 -DTHREADS_OUT=8 \
+    src/transcode_lz4/transcode_lz4_main.c \
+    src/transcode_lz4/transcode_lz4_mt.c \
+    src/avbuffer_queue.c \
+    src/cpu_stats.cpp \
+    -o transcode_mt \
+    -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm -llz4 -lpthread
+
+# Com escrita habilitada
+gcc -O3 -Wall -Wno-unused-variable \
+    -DTHREADS_IN=8 -DTHREADS_OUT=8 -DENABLE_OUTPUT_WRITE=1 \
+    src/transcode_lz4/transcode_lz4_main.c \
+    src/transcode_lz4/transcode_lz4_mt.c \
+    src/avbuffer_queue.c \
+    src/cpu_stats.cpp \
+    -o transcode_mt \
+    -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm -llz4 -lpthread
+```
+
+#### Transcodificação - Single-thread (transcode.c)
+
+```bash
+# LZ4
+gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
+    -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
+    -DTHREADS_IN=1 -DTHREADS_OUT=1 -DUSE_LZ_COMPRESS -DLZ_CONFIG=1
+
+# LZ4HC (nível de compressão 9)
+gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
+    -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
+    -DTHREADS_IN=1 -DTHREADS_OUT=1 -DUSE_LZ_COMPRESS -DLZ_CONFIG=9
+
+# MJPEG
+gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
+    -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
+    -DTHREADS_IN=8 -DTHREADS_OUT=8
+```
+
+#### Decodificação - LZ4 Multithread
+
+```bash
+# Sem escrita (padrão)
+g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
+    src/decode_lz4/decode_lz4_main.cpp src/decode_lz4/decode_lz4_mt.cpp \
+    src/decode_lz4/frame_reader.cpp src/decode_lz4/frame_decoder.cpp \
+    src/decode_lz4/frame_writer.cpp src/decode_lz4/stats.cpp \
+    src/cpu_stats.cpp \
+    -o decode_lz4 -I/usr/local/include -L/usr/local/lib \
+    -lavutil -lm -llz4 -lpthread
+
+# Com escrita habilitada
+g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
+    -DENABLE_OUTPUT_WRITE=1 \
+    src/decode_lz4/decode_lz4_main.cpp src/decode_lz4/decode_lz4_mt.cpp \
+    src/decode_lz4/frame_reader.cpp src/decode_lz4/frame_decoder.cpp \
+    src/decode_lz4/frame_writer.cpp src/decode_lz4/stats.cpp \
+    src/cpu_stats.cpp \
+    -o decode_lz4 -I/usr/local/include -L/usr/local/lib \
+    -lavutil -lm -llz4 -lpthread
+```
+
+#### Decodificação - FFmpeg (decode.cpp)
+
+```bash
+# Sem escrita (padrão)
+g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
+    src/decode.cpp src/cpu_stats.cpp -o decode \
+    -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm
+
+# Com escrita habilitada
+g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
+    -DENABLE_OUTPUT_WRITE=1 \
+    src/decode.cpp src/cpu_stats.cpp -o decode \
+    -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm
+```
+
+### Macros de Compilação
+
+| Macro | Default | Descrição |
+|-------|---------|-----------|
+| `THREADS_IN` | 0/1 | Threads de decodificação |
+| `THREADS_OUT` | 0/1 | Threads de codificação |
+| `USE_LZ_COMPRESS` | - | Habilita compressão LZ4 |
+| `LZ_CONFIG` | 1 | Nível de aceleração (LZ4) ou compressão (LZ4HC) |
+| `ENABLE_OUTPUT_WRITE` | 0 | Habilita escrita de arquivos de saída |
+
+---
+
+## Manual de Execução
+
+### Transcodificação
+
+```bash
+./transcode.sh -i <video> -r <csv> -e <encoder> [-o <dir>] [-w]
+```
+
+| Parâmetro | Descrição |
+|-----------|-----------|
+| `-i` | Vídeo de entrada |
+| `-r` | Arquivo CSV de resultados |
+| `-e` | Encoder: `mjpeg`, `libsvtjpegxs`, `lz4`, `lz4hc` |
+| `-o` | Diretório de saída (default: `.`) |
+| `-w` | Habilita escrita de arquivos (default: desabilitado) |
+
+**Exemplos:**
+
+```bash
+# Benchmark LZ4 sem escrita (padrão)
+./transcode.sh -i dataset/ssim95_avc.mp4 -r results/lz4.csv -e lz4 -o output/
+
+# Transcodificação MJPEG com escrita
+./transcode.sh -i dataset/ssim95_avc.mp4 -r results/mjpeg.csv -e mjpeg -o output/ -w
+
+# LZ4HC com alta compressão
+./transcode.sh -i dataset/ssim95_avc.mp4 -r results/lz4hc.csv -e lz4hc -o output/ -w
+```
+
+### Decodificação
+
+```bash
+./decode.sh -i <video> -r <csv> [-o <dir>] [-l <lz>] [-p <profile>] [-w]
+```
+
+| Parâmetro | Descrição |
+|-----------|-----------|
+| `-i` | Vídeo de entrada |
+| `-r` | Arquivo CSV de resultados |
+| `-o` | Diretório de saída (default: `.`) |
+| `-l` | Algoritmo LZ: `lz4` ou `lz4hc` |
+| `-p` | Perfil específico: `low_latency`, `balanced`, `high_throughput` |
+| `-w` | Habilita escrita de arquivos (default: desabilitado) |
+
+**Exemplos:**
+
+```bash
+# Decodificação FFmpeg padrão
+./decode.sh -i dataset/ssim95_avc.mp4 -r results/decode.csv -o output/
+
+# Decodificação LZ4
+./decode.sh -i output/high_throughput.lz4 -r results/decode_lz4.csv -l lz4 -o output/
+
+# Com escrita habilitada
+./decode.sh -i output/high_throughput.lz4 -r results/decode_lz4.csv -l lz4 -o output/ -w
+```
+
+### Perfis de Threads
+
+| Perfil | Threads IN | Threads OUT | Uso |
+|--------|------------|-------------|-----|
+| `low_latency` | 1 | 1 | Menor latência |
+| `balanced` | 8 | 8 | Equilíbrio |
+| `high_throughput` | 16 | 16 | Máximo throughput |
+
+---
+
+## Execução dos Binários Diretamente
+
+### transcode_lz4_mt
+
+```bash
+./transcode_mt -i <input> -o <output> -e <encoder> -l <level> -p <profile>
+```
+
+| Parâmetro | Descrição |
+|-----------|-----------|
+| `-i` | Arquivo de entrada |
+| `-o` | Arquivo de saída |
+| `-e` | Encoder: `lz4` ou `lz4hc` |
+| `-l` | Nível de compressão (1-12) |
+| `-p` | Nome do perfil |
+
+### decode_lz4
+
+```bash
+./decode_lz4 -i <input> -o <output> -p <profile> -t <threads>
+```
+
+| Parâmetro | Descrição |
+|-----------|-----------|
+| `-i` | Arquivo .lz4 de entrada |
+| `-o` | Arquivo .yuv de saída |
+| `-p` | Nome do perfil |
+| `-t` | Número de threads |
+
+---
+
+## Análise de Resultados
+
+### Scripts de Análise
+
+```bash
+# Transcodificação
+python3 results/transcoding/analyze_transcoding.py result1.csv result2.csv ...
+
+# Decodificação
+python3 results/decoding/analyze_decoding.py result1.csv result2.csv ...
+```
+
+### Dependências
+
+```bash
+pip install pandas matplotlib seaborn
+```
+
+### Formato do CSV
+
+```csv
+profile,threads_in,threads_out,type,time[,compression_level]
+low_latency,1,1,transcoding,1234,1
+low_latency,1,1,total,567890,1
+low_latency,1,1,fps,60.5,1
+```
+
+---
+
+## Workflow Completo
+
+### Exemplo: Round-trip LZ4
+
+```bash
+# 1. Transcodificar com escrita
+./transcode.sh \
+    -i dataset/ssim95_avc.mp4 \
+    -r results/encode.csv \
+    -e lz4 \
+    -o encoded/ \
+    -w
+
+# 2. Decodificar com escrita
+./decode.sh \
+    -i encoded/high_throughput.lz4 \
+    -r results/decode.csv \
+    -l lz4 \
+    -o decoded/ \
+    -w
+
+# 3. Verificar SSIM
+ffmpeg -s 1920x1080 -i decoded/high_throughput.yuv \
+       -i dataset/ssim95_avc.mp4 \
+       -lavfi ssim -f null -
+```
+
+### Exemplo: Benchmark Comparativo
+
+```bash
+# Transcodificar com múltiplos encoders
+for enc in lz4 lz4hc mjpeg; do
+    ./transcode.sh \
+        -i dataset/ssim95_avc.mp4 \
+        -r results/${enc}.csv \
+        -e ${enc} \
+        -o output/${enc}/
+done
+
+# Analisar todos juntos
+python3 results/transcoding/analyze_transcoding.py \
+    results/lz4.csv results/lz4hc.csv results/mjpeg.csv
+```
+
+---
+
+## Skills Disponíveis
+
+Use `/benchmark-transcode` e `/benchmark-decode` para executar benchmarks com assistência do Claude.
+
+---
+
+## Troubleshooting
+
+### Erro: "Could not open codec"
+
+Verifique se o FFmpeg foi compilado com os codecs necessários:
+
+```bash
+ffmpeg -encoders | grep -E "mjpeg|jpegxs"
+```
+
+### Erro: "undefined reference to `LZ4_compress_fast'"
+
+Instale a biblioteca LZ4:
+
+```bash
+sudo apt install liblz4-dev
+```
+
+### Arquivos de saída com tamanho 0
+
+Comportamento esperado quando `-w` não é especificado (benchmark puro).
+
+### Baixo desempenho em multithread
+
+Verifique se o número de threads não excede os núcleos disponíveis:
+
+```bash
+nproc  # Mostra número de CPUs lógicas
+```

@@ -57,18 +57,23 @@ O benchmark utiliza **três perfis de configuração de threads** para avaliar d
 **Uso:**
 
 ```bash
-./transcode.sh -i <video_de_entrada> -r <arquivo_de_resultados_csv> -e <encoder> [-o <diretorio_de_saida>]
+./transcode.sh -i <video_de_entrada> -r <arquivo_de_resultados_csv> -e <encoder> [-o <diretorio_de_saida>] [-w]
 ```
 
 -   `-i`: Caminho para o vídeo de entrada.
 -   `-r`: Nome do arquivo CSV onde os resultados do benchmark serão salvos.
 -   `-e`: Nome do encoder a ser utilizado (ex: `mjpeg`, `libsvtjpegxs`, `lz4`, `lz4hc`).
 -   `-o`: (Opcional) Diretório onde os vídeos transcodificados serão salvos. O padrão é o diretório atual.
+-   `-w`: (Opcional) Habilita escrita de arquivos de saída. **Padrão: desabilitado** (benchmark puro sem I/O de disco).
 
 **Exemplo:**
 
 ```bash
+# Benchmark sem escrita de arquivos (padrão - mais rápido)
 ./transcode.sh -i video.mp4 -r resultados_transcode.csv -e mjpeg -o ./output_transcode
+
+# Com escrita de arquivos habilitada
+./transcode.sh -i video.mp4 -r resultados_transcode.csv -e mjpeg -o ./output_transcode -w
 ```
 
 ### 3. Decodificar um Vídeo (`decode.sh`)
@@ -88,18 +93,23 @@ O benchmark de decodificação utiliza os **mesmos três perfis de configuraçã
 **Uso:**
 
 ```bash
-./decode.sh -i <video_de_entrada> -r <arquivo_de_resultados_csv> [-o <diretorio_de_saida>] [-l <algoritmo_lz>]
+./decode.sh -i <video_de_entrada> -r <arquivo_de_resultados_csv> [-o <diretorio_de_saida>] [-l <algoritmo_lz>] [-w]
 ```
 
 -   `-i`: Caminho para o vídeo de entrada a ser decodificado.
 -   `-r`: Nome do arquivo CSV onde os resultados do benchmark serão salvos.
 -   `-o`: (Opcional) Diretório onde o vídeo decodificado (YUV) será salvo. O padrão é o diretório atual.
 -   `-l`: (Opcional) Descompacta vídeo usando `lz4` ou `lz4hc` quando este foi compactado usando um desses métodos.
+-   `-w`: (Opcional) Habilita escrita de arquivos de saída. **Padrão: desabilitado** (benchmark puro sem I/O de disco).
 
 **Exemplo:**
 
 ```bash
+# Benchmark sem escrita de arquivos (padrão - mais rápido)
 ./decode.sh -i video.mp4 -r resultados_decode.csv -o ./output_decode
+
+# Com escrita de arquivos habilitada
+./decode.sh -i video.mp4 -r resultados_decode.csv -o ./output_decode -w
 ```
 
 ### 4. Comparar Vídeos (`dataset/compare.sh`)

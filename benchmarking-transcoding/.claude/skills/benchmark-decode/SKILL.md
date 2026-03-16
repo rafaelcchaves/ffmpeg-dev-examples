@@ -27,13 +27,13 @@ O script `decode.sh` executa benchmarks de decodificação de vídeo em dois mod
 ### Modo FFmpeg (vídeos padrão)
 
 ```bash
-./decode.sh -i <input-video> -r <csv-result> [-o <output-dir>]
+./decode.sh -i <input-video> -r <csv-result> [-o <output-dir>] [-w]
 ```
 
 ### Modo LZ4 (arquivos comprimidos)
 
 ```bash
-./decode.sh -i <input.lz4> -r <csv-result> -l lz4 [-o <output-dir>] [-p <profile>]
+./decode.sh -i <input.lz4> -r <csv-result> -l lz4 [-o <output-dir>] [-p <profile>] [-w]
 ```
 
 ### Parâmetros
@@ -45,6 +45,25 @@ O script `decode.sh` executa benchmarks de decodificação de vídeo em dois mod
 | `-o` | Não | Diretório de saída (default: `.`) |
 | `-l` | Não | Algoritmo LZ (`lz4` ou `lz4hc`) |
 | `-p` | Não | Perfil específico (default: todos) |
+| `-w` | Não | Habilita escrita de arquivos de saída (default: desabilitado) |
+
+### Flag de Escrita (`-w`)
+
+Por padrão, os benchmarks são executados **sem escrita de arquivos** para medir apenas o desempenho de CPU:
+
+```bash
+# Benchmark puro (padrão) - sem I/O de disco
+./decode.sh -i video.mp4 -r results.csv -o output/
+# Arquivos YUV de saída terão tamanho 0 ou não existirão
+```
+
+Para habilitar a escrita de arquivos:
+
+```bash
+# Com escrita habilitada
+./decode.sh -i video.mp4 -r results.csv -o output/ -w
+# Arquivos YUV serão gerados normalmente
+```
 
 ---
 

@@ -17,6 +17,12 @@ extern "C" {
 #define THREADS_IN 0
 #endif
 
+// Flag de compilação para habilitar/desabilitar escrita de arquivo de saída
+// Padrão: desabilitado (benchmark sem I/O de disco)
+#ifndef ENABLE_OUTPUT_WRITE
+#define ENABLE_OUTPUT_WRITE 0
+#endif
+
 int frames;
 const char *profile_name = NULL;
 
@@ -88,11 +94,16 @@ int main(int argc, char** argv){
         fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
         exit(1);
     }
+#if ENABLE_OUTPUT_WRITE
     output = fopen(outfilename, "wb");
     if (!output) {
         fprintf(stderr, "Could not open %s\n", outfilename);
         exit(1);
     }
+#else
+    output = NULL;  // No file opened when writes disabled
+    (void)outfilename;  // Avoid unused warning
+#endif
 
     frame = av_frame_alloc();
     if (!frame) {
@@ -165,6 +176,8 @@ int main(int argc, char** argv){
     avcodec_free_context(&incodec_ctx);
     av_frame_free(&frame);
     av_packet_free(&inpkt);
-    fclose(output);
+#if ENABLE_OUTPUT_WRITE
+    if (output) fclose(output);
+#endif
     return 0;
 }

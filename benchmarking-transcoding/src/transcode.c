@@ -34,6 +34,13 @@ To execute tests:
 #ifndef LZ_CONFIG
 #define LZ_CONFIG 1
 #endif
+
+// Flag de compilação para habilitar/desabilitar escrita de arquivo de saída
+// Padrão: desabilitado (benchmark sem I/O de disco)
+#ifndef ENABLE_OUTPUT_WRITE
+#define ENABLE_OUTPUT_WRITE 0
+#endif
+
 int pts;
 int dts;
 int frames;
@@ -98,7 +105,11 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
             }
 	    if(inpkt)
             	printf("%s,%d,%d,transcoding,%ld\n", profile_name, THREADS_IN, THREADS_OUT, av_gettime() - outpkt->dts);
+#if ENABLE_OUTPUT_WRITE
             fwrite(outpkt->data, 1, outpkt->size, outfile);
+#else
+            (void)outfile;  // Avoid unused warning
+#endif
             av_packet_unref(outpkt);
         }
 #else
@@ -121,8 +132,13 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
         }
 
         headerFile hf = {image_bufsize, compressedSize, frame->width, frame->height, frame->format};
+#if ENABLE_OUTPUT_WRITE
         fwrite(&hf, sizeof(headerFile), 1, outfile);
         fwrite(compressedFrame, 1, compressedSize, outfile);
+#else
+        (void)outfile;  // Avoid unused warning
+        (void)hf;  // Avoid unused warning
+#endif
 #endif
 
     }
@@ -139,7 +155,11 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
             fprintf(stderr, "Error during encoding\n");
             exit(1);
         }
+#if ENABLE_OUTPUT_WRITE
         fwrite(outpkt->data, 1, outpkt->size, outfile);
+#else
+        (void)outfile;  // Avoid unused warning
+#endif
         av_packet_unref(outpkt);
     }
 #endif
@@ -194,11 +214,16 @@ int main(int argc, char** argv){
         fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
         exit(1);
     }
+#if ENABLE_OUTPUT_WRITE
     output = fopen(outfilename, "wb");
     if (!output) {
         fprintf(stderr, "Could not open %s\n", outfilename);
         exit(1);
     }
+#else
+    output = NULL;  // No file opened when writes disabled
+    (void)outfilename;  // Avoid unused warning
+#endif
  
     AVFrame *frame;
     frame = av_frame_alloc();
@@ -334,7 +359,9 @@ int main(int argc, char** argv){
     av_frame_free(&frame);
     av_packet_free(&inpkt);
     av_packet_free(&outpkt);
-    fclose(output);
+#if ENABLE_OUTPUT_WRITE
+    if (output) fclose(output);
+#endif
     free(compressedFrame);
     av_free(image_data[0]);
     return 0;

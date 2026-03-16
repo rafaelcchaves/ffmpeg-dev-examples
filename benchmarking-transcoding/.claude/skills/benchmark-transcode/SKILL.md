@@ -25,7 +25,7 @@ O script `transcode.sh` executa benchmarks de transcodificação de vídeo, test
 ## Uso Básico
 
 ```bash
-./transcode.sh -i <input-video> -r <csv-result> -e <encoder> [-o <output-dir>]
+./transcode.sh -i <input-video> -r <csv-result> -e <encoder> [-o <output-dir>] [-w]
 ```
 
 ### Parâmetros
@@ -36,6 +36,25 @@ O script `transcode.sh` executa benchmarks de transcodificação de vídeo, test
 | `-r` | Sim | Arquivo CSV para salvar resultados |
 | `-e` | Sim | Encoder a ser usado |
 | `-o` | Não | Diretório de saída (default: `.`) |
+| `-w` | Não | Habilita escrita de arquivos de saída (default: desabilitado) |
+
+### Flag de Escrita (`-w`)
+
+Por padrão, os benchmarks são executados **sem escrita de arquivos** para medir apenas o desempenho de CPU:
+
+```bash
+# Benchmark puro (padrão) - sem I/O de disco
+./transcode.sh -i video.mp4 -r results.csv -e lz4 -o output/
+# Arquivos de saída terão tamanho 0 ou não existirão
+```
+
+Para habilitar a escrita de arquivos:
+
+```bash
+# Com escrita habilitada
+./transcode.sh -i video.mp4 -r results.csv -e lz4 -o output/ -w
+# Arquivos de saída serão gerados normalmente
+```
 
 ---
 
@@ -271,6 +290,7 @@ python3 results/transcoding/analyze_transcoding.py \
 | `THREADS_OUT` | 0 | Threads de codificação |
 | `USE_LZ_COMPRESS` | - | Habilita compressão LZ4 |
 | `LZ_CONFIG` | 1 | Nível de aceleração/compressão LZ4 |
+| `ENABLE_OUTPUT_WRITE` | 0 | Habilita escrita de arquivos de saída |
 
 #### transcode_lz4_mt
 
@@ -278,6 +298,7 @@ python3 results/transcoding/analyze_transcoding.py \
 |-------|---------|-----------|
 | `THREADS_IN` | 0 | Threads de decodificação FFmpeg |
 | `THREADS_OUT` | 1 | Threads codificadoras LZ4 |
+| `ENABLE_OUTPUT_WRITE` | 0 | Habilita escrita de arquivos de saída |
 
 ---
 

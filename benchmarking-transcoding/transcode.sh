@@ -1,22 +1,25 @@
 #!/usr/bin/env bash
 
 usage() {
-    echo "Usage: $0 -i <input-video> -r <csv-result> -e <encoder> [-o <output-dir>]"
+    echo "Usage: $0 -i <input-video> -r <csv-result> -e <encoder> [-o <output-dir>] [-w]"
     echo "  -i  Input video file"
     echo "  -r  CSV result file"
     echo "  -e  Encoder (mjpeg, libsvtjpegxs, lz4, lz4hc, or other)"
     echo "  -o  Output directory (default: .)"
+    echo "  -w  Enable output file writing (default: disabled for benchmark)"
     exit 1
 }
 
 output_dir="."
+enable_write=0
 
-while getopts "i:r:e:o:" opt; do
+while getopts "i:r:e:o:w" opt; do
     case "$opt" in
         i) in_file="$OPTARG";;
         r) results_file="$OPTARG";;
         e) encoder_name="$OPTARG";;
         o) output_dir="$OPTARG";;
+        w) enable_write=1;;
         *) usage;;
     esac
 done
@@ -38,6 +41,13 @@ else
 fi
 
 mkdir -p "$output_dir"
+
+# Define WRITE_FLAG based on enable_write option
+if [ "$enable_write" -eq 1 ]; then
+    WRITE_FLAG="-DENABLE_OUTPUT_WRITE=1"
+else
+    WRITE_FLAG=""
+fi
 
 # Define thread profiles: name:threads_in:threads_out
 declare -a profiles=(
@@ -82,7 +92,7 @@ for profile_config in "${profiles[@]}"; do
             echo ">>> Building $profile_name (multithread) with THREADS_IN=$threads_in_config THREADS_OUT=$threads_out"
 
             gcc -O3 -Wall -Wno-unused-variable \
-                -DTHREADS_IN="$threads_in_config" -DTHREADS_OUT="$threads_out" \
+                -DTHREADS_IN="$threads_in_config" -DTHREADS_OUT="$threads_out" $WRITE_FLAG \
                 src/transcode_lz4/transcode_lz4_main.c \
                 src/transcode_lz4/transcode_lz4_mt.c \
                 src/avbuffer_queue.c \
@@ -99,7 +109,7 @@ for profile_config in "${profiles[@]}"; do
 
             gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o "$bin" -I/usr/local/include -L/usr/local/lib \
                 -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
-                -DTHREADS_IN="$threads_in_config" -DTHREADS_OUT=$threads_out \
+                -DTHREADS_IN="$threads_in_config" -DTHREADS_OUT=$threads_out $WRITE_FLAG \
                 -DUSE_LZ_COMPRESS -DLZ_CONFIG=$lz_config
 
             echo ">>> Running $bin (single-thread) ..."
@@ -111,7 +121,7 @@ for profile_config in "${profiles[@]}"; do
 
         gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o "$bin" -I/usr/local/include -L/usr/local/lib \
             -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
-            -DTHREADS_IN="$threads_in_config" -DTHREADS_OUT=$threads_out
+            -DTHREADS_IN="$threads_in_config" -DTHREADS_OUT=$threads_out $WRITE_FLAG
 
         echo ">>> Running $bin ..."
         "./$bin" -i "$in_file" -o "$output_path" -e "$encoder_name" -p "$profile_name" >> "$results_file"

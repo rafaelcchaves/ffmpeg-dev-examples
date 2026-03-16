@@ -1,26 +1,29 @@
 #!/usr/bin/env bash
 
 usage() {
-    echo "Usage: $0 -i <input-video> -r <csv-result> [-o <output-dir>] [-l <lz-algorithm>] [-p <profile>]"
+    echo "Usage: $0 -i <input-video> -r <csv-result> [-o <output-dir>] [-l <lz-algorithm>] [-p <profile>] [-w]"
     echo "  -i  Input video file"
     echo "  -r  CSV result file"
     echo "  -o  Output directory (default: .)"
     echo "  -l  LZ algorithm (lz4 or lz4hc)"
     echo "  -p  Profile: low_latency, balanced, high_throughput (default: all profiles)"
+    echo "  -w  Enable output file writing (default: disabled for benchmark)"
     exit 1
 }
 
 output_dir="."
 lz_algorithm=""
 profile=""
+enable_write=0
 
-while getopts "i:r:o:l:p:" opt; do
+while getopts "i:r:o:l:p:w" opt; do
     case "$opt" in
         i) in_file="$OPTARG";;
         r) results_file="$OPTARG";;
         o) output_dir="$OPTARG";;
         l) lz_algorithm="$OPTARG";;
         p) profile="$OPTARG";;
+        w) enable_write=1;;
         *) usage;;
     esac
 done
@@ -34,6 +37,13 @@ export LD_LIBRARY_PATH="/usr/local/lib"
 echo "profile,threads_in,threads_out,type,time" > "$results_file"
 
 mkdir -p "$output_dir"
+
+# Define WRITE_FLAG based on enable_write option
+if [ "$enable_write" -eq 1 ]; then
+    WRITE_FLAG="-DENABLE_OUTPUT_WRITE=1"
+else
+    WRITE_FLAG=""
+fi
 
 if [ "$lz_algorithm" == "" ]; then
 
@@ -50,8 +60,9 @@ if [ "$lz_algorithm" == "" ]; then
         bin="decode_${profile_name}"
         echo ">>> Building $profile_name with THREADS_IN=$threads_in_config"
 
-        g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function src/decode.cpp src/cpu_stats.cpp -o "$bin" -I/usr/local/include -L/usr/local/lib \
-        -lavcodec -lavutil -lavformat -lm
+        g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
+            src/decode.cpp src/cpu_stats.cpp -o "$bin" -I/usr/local/include -L/usr/local/lib \
+            -lavcodec -lavutil -lavformat -lm $WRITE_FLAG
 
         output_path="$output_dir/${profile_name}.yuv"
 
@@ -89,6 +100,7 @@ else
         echo ">>> Building $profile_name with THREADS_IN=$threads_in_config"
 
         g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
+            $WRITE_FLAG \
             src/decode_lz4/decode_lz4_main.cpp src/decode_lz4/decode_lz4_mt.cpp \
             src/decode_lz4/frame_reader.cpp src/decode_lz4/frame_decoder.cpp \
             src/decode_lz4/frame_writer.cpp src/decode_lz4/stats.cpp \
