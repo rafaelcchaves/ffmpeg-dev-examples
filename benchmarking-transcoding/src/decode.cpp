@@ -1,6 +1,5 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
-#include <libavutil/opt.h>
 #include <libavutil/time.h>
 #include <libavformat/avformat.h>
 #include <libavutil/imgutils.h>
@@ -11,8 +10,6 @@ extern "C" {
 #include <string.h>
 #include <unistd.h>
 #include "cpu_stats.h"
-
-#define INBUF_SIZE 10000
 
 int frames;
 int num_decoder_threads = 0;

@@ -22,9 +22,11 @@ benchmarking-transcoding/
 │   ├── queue.h / queue.c        # Fila genérica thread-safe com ownership
 │   ├── transcode.c              # Transcodificação single-thread
 │   ├── decode.cpp               # Decodificação FFmpeg
-│   ├── transcode_lz4/           # Transcodificação LZ4 multithread
+│   ├── transcode_lz4/           # Transcodificação LZ4 (single-thread + multithread)
 │   │   ├── transcode_lz4_main.c
-│   │   └── transcode_lz4_mt.c
+│   │   ├── transcode_lz4_st.c   # Encode single-thread
+│   │   ├── transcode_lz4_st.h
+│   │   └── transcode_lz4_mt.c   # Encode multithread (producer-consumer)
 │   ├── decode_lz4/              # Decodificação LZ4 multithread
 │   │   ├── decode_lz4_main.cpp
 │   │   ├── decode_lz4_mt.cpp
@@ -145,12 +147,13 @@ Os scripts `transcode.sh` e `decode.sh` compilam automaticamente:
 
 ### Compilação Manual
 
-#### Transcodificação - LZ4/LZ4HC Multithread
+#### Transcodificação - LZ4/LZ4HC (single-thread + multithread)
 
 ```bash
 # Compilação única (escrita controlada via -w em tempo de execução)
 gcc -O3 -Wall -Wno-unused-variable \
     src/transcode_lz4/transcode_lz4_main.c \
+    src/transcode_lz4/transcode_lz4_st.c \
     src/transcode_lz4/transcode_lz4_mt.c \
     src/queue.c \
     src/cpu_stats.cpp \
@@ -165,7 +168,7 @@ gcc -O3 -Wall -Wno-unused-variable \
 # MJPEG
 gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
     -I/usr/local/include -L/usr/local/lib \
-    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2
+    -lavcodec -lavutil -lavformat -lm
 ```
 
 #### Decodificação - LZ4 Multithread
@@ -190,13 +193,6 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
     -I/usr/local/include -L/usr/local/lib \
     -lavcodec -lavutil -lavformat -lm
 ```
-
-### Macros de Compilação
-
-| Macro | Default | Descrição |
-|-------|---------|-----------|
-| `USE_LZ_COMPRESS` | - | Habilita compressão LZ4 |
-| `LZ_CONFIG` | 1 | Nível de aceleração (LZ4) ou compressão (LZ4HC) |
 
 ### Opções de CLI para Threads
 
@@ -277,7 +273,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 
 ## Execução dos Binários Diretamente
 
-### transcode_lz4_mt
+### transcode_mt (LZ4/LZ4HC - single-thread + multithread)
 
 ```bash
 ./transcode_mt -i <input> [-o <output>] -e <encoder> -l <level> -p <profile> -D <decoder_threads> -E <encoder_threads> [-w]
@@ -291,7 +287,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 | `-l` | Nível de compressão (1-12) |
 | `-p` | Nome do perfil |
 | `-D` | Threads decodificadoras FFmpeg (default: 0 = auto) |
-| `-E` | Threads codificadoras LZ4 (default: 1) |
+| `-E` | Threads codificadoras LZ4 (1 = single-thread, >1 = multithread) |
 | `-w` | Habilita escrita de arquivo de saída |
 
 ### decode_lz4

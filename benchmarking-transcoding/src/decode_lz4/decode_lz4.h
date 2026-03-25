@@ -30,18 +30,6 @@ typedef struct {
     int max_capacity;
 } DecodeContext;
 
-// Configuracao do decodificador
-typedef enum {
-    DECODE_MODE_SINGLE_THREAD,  // modo atual
-    DECODE_MODE_MULTI_THREAD,   // futuro
-} DecodeMode;
-
-typedef struct {
-    DecodeMode mode;
-    int threads;
-    const char *profile_name;
-} DecodeConfig;
-
 // Interfaces do modulo frame_reader
 int frame_reader_init(const char *filename, FILE **infile);
 int frame_reader_read_header(FILE *infile, FrameHeader *header);
@@ -109,12 +97,10 @@ extern std::string g_profile_name;
 // ============================================================================
 
 // Inicialização
-int mt_initialize_synchronization();
 int mt_initialize_write_control(FILE *output_file);
 int mt_initialize_state(FILE *input_file);
 
 // Limpeza
-void mt_cleanup_synchronization();
 void mt_cleanup_write_control();
 void mt_cleanup_state();
 

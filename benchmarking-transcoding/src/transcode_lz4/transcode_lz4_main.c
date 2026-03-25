@@ -4,6 +4,7 @@
  */
 
 #include "transcode_lz4_mt.h"
+#include "transcode_lz4_st.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -130,7 +131,15 @@ int main(int argc, char **argv) {
     // Configura modo escrita
     g_enable_write = enable_write;
 
-    // Executa codificação
-    return mt_encode_main(input_file, output_file, num_decoder_threads, num_encoder_threads,
-                          encoder_type, compression_level, profile, debug_mode);
+    // Seleciona modo de operação
+    if (num_encoder_threads == 1) {
+        // Modo single-thread (sem Queue, sem threads para compressão)
+        return st_encode_main(input_file, output_file, num_decoder_threads,
+                              encoder_type, compression_level, profile);
+    } else {
+        // Modo multi-thread (producer-consumer)
+        return mt_encode_main(input_file, output_file, num_decoder_threads,
+                              num_encoder_threads, encoder_type,
+                              compression_level, profile, debug_mode);
+    }
 }

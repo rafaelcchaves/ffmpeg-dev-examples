@@ -55,9 +55,10 @@ declare -a profiles=(
 
 if [ "$encoder_name" = "lz4" ] || [ "$encoder_name" = "lz4hc" ]; then
     # LZ4/LZ4HC: always use multithread binary
-    echo ">>> Building transcode_lz4_mt ..."
+    echo ">>> Building transcode_lz4 (ST + MT) ..."
     gcc -O3 -Wall -Wno-unused-variable \
         src/transcode_lz4/transcode_lz4_main.c \
+        src/transcode_lz4/transcode_lz4_st.c \
         src/transcode_lz4/transcode_lz4_mt.c \
         src/queue.c \
         src/cpu_stats.cpp \
@@ -69,7 +70,7 @@ else
     # Other encoders (mjpeg, libsvtjpegxs, etc.) - use transcode.c
     echo ">>> Building transcode ..."
     gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode -I/usr/local/include -L/usr/local/lib \
-        -lavcodec -lavutil -lavformat -lm -llz4 -llzo2
+        -lavcodec -lavutil -lavformat -lm
     bin="transcode"
 fi
 
@@ -99,7 +100,9 @@ for profile_config in "${profiles[@]}"; do
     echo ">>> Running $bin for $profile_name with -D $decoder_threads_config -E $encoder_threads_config ..."
     write_flag=""
     if [ "$enable_write" -eq 1 ]; then write_flag="-w"; fi
-    "./$bin" -i "$in_file" -o "$output_path" -e "$encoder_name" -l "$lz_config" -p "$profile_name" -D "$decoder_threads_config" -E "$encoder_threads_config" $write_flag >> "$results_file"
+    lz_flag=""
+    if [ "$bin" = "transcode_mt" ]; then lz_flag="-l $lz_config"; fi
+    "./$bin" -i "$in_file" -o "$output_path" -e "$encoder_name" $lz_flag -p "$profile_name" -D "$decoder_threads_config" -E "$encoder_threads_config" $write_flag >> "$results_file"
 done
 
 rm -f "$bin"

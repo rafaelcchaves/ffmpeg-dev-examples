@@ -6,7 +6,7 @@ Este projeto contém um conjunto de scripts para realizar benchmarking de transc
 
 -   `dataset/generate.sh`: Gera arquivos de vídeo codificados a partir de um arquivo YUV bruto.
 -   `src/transcode.c` / `transcode.sh`: Realiza a transcodificação de um vídeo para diferentes formatos (single-thread).
--   `src/transcode_lz4/` / `transcode.sh`: Transcodificação LZ4/LZ4HC multithread (arquitetura producer-consumer).
+-   `src/transcode_lz4/` / `transcode.sh`: Transcodificação LZ4/LZ4HC com suporte single-thread e multithread (arquitetura producer-consumer).
 -   `src/decode.cpp` / `decode.sh`: Realiza a decodificação de um vídeo (FFmpeg).
 -   `src/decode_lz4/` / `decode.sh`: Decodificação LZ4 multithread (arquitetura producer-consumer).
 -   `src/frame_types.h`: Tipos compartilhados entre encode e decode (`FrameHeader`, `FrameItem`).
@@ -56,7 +56,7 @@ O benchmark utiliza **três perfis de configuração de threads** para avaliar d
 | `balanced` | 8 | 8 | Configuração equilibrada para uso geral |
 | `high_throughput` | 16 | 16 | Focado em máxima vazão (throughput) |
 
-**Nota:** Para codificadores LZ4 e LZ4HC, o perfil `low_latency` (1 thread) utiliza a implementação single-thread (`transcode.c`). Os perfis `balanced` e `high_throughput` utilizam a implementação multithread (`transcode_lz4/`) com arquitetura producer-consumer, onde uma thread decodifica com FFmpeg e múltiplas threads comprimem com LZ4/LZ4HC em paralelo.
+**Nota:** Para codificadores LZ4 e LZ4HC, o perfil `low_latency` (1 thread codificadora) utiliza a implementação single-thread (`transcode_lz4_st.c`). Os perfis `balanced` e `high_throughput` utilizam a implementação multithread (`transcode_lz4_mt.c`) com arquitetura producer-consumer, onde uma thread decodifica com FFmpeg e múltiplas threads comprimem com LZ4/LZ4HC em paralelo. A seleção entre ST e MT é automática baseada no número de threads codificadoras (`-E`).
 
 **Uso:**
 
@@ -144,40 +144,12 @@ Além dos scripts `transcode.sh` e `decode.sh`, cada benchmark pode ser compilad
 
 ### Transcodificação — Single-thread (`src/transcode.c`)
 
-#### LZ4
-
-```bash
-gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
-    -I/usr/local/include -L/usr/local/lib \
-    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
-    -DUSE_LZ_COMPRESS -DLZ_CONFIG=1
-
-./transcode -i video.mp4 -o output.lz4 -e lz4 -p low_latency
-
-# Com escrita habilitada
-./transcode -i video.mp4 -o output.lz4 -e lz4 -p low_latency -w
-```
-
-#### LZ4HC (nível de compressão 9)
-
-```bash
-gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
-    -I/usr/local/include -L/usr/local/lib \
-    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
-    -DUSE_LZ_COMPRESS -DLZ_CONFIG=9
-
-./transcode -i video.mp4 -o output.lz4 -e lz4hc -p low_latency
-
-# Com escrita habilitada
-./transcode -i video.mp4 -o output.lz4 -e lz4hc -p low_latency -w
-```
-
 #### MJPEG (ou outros encoders FFmpeg)
 
 ```bash
 gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
     -I/usr/local/include -L/usr/local/lib \
-    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2
+    -lavcodec -lavutil -lavformat -lm
 
 ./transcode -i video.mp4 -o output.mjpeg -e mjpeg -p balanced -D 8 -E 8
 
@@ -191,17 +163,18 @@ gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
 |-----------|-----------|
 | `-i` | Arquivo de vídeo de entrada |
 | `-o` | Arquivo de saída |
-| `-e` | Encoder: `lz4`, `lz4hc`, `mjpeg`, `libsvtjpegxs`, etc. |
+| `-e` | Encoder: `mjpeg`, `libsvtjpegxs`, etc. |
 | `-p` | Nome do perfil |
 | `-D` | Threads decodificadoras (default: 0 = auto) |
 | `-E` | Threads codificadoras (default: 0 = auto) |
 | `-w` | Habilita escrita do arquivo de saída (default: desabilitado) |
 
-### Transcodificação — LZ4/LZ4HC Multithread (`src/transcode_lz4/`)
+### Transcodificação — LZ4/LZ4HC (`src/transcode_lz4/`)
 
 ```bash
 gcc -O3 -Wall -Wno-unused-variable \
     src/transcode_lz4/transcode_lz4_main.c \
+    src/transcode_lz4/transcode_lz4_st.c \
     src/transcode_lz4/transcode_lz4_mt.c \
     src/queue.c \
     src/cpu_stats.cpp \
@@ -225,7 +198,7 @@ gcc -O3 -Wall -Wno-unused-variable \
 | `-l` | Nível de compressão (1–12; para LZ4 controla aceleração, para LZ4HC controla compressão) |
 | `-p` | Nome do perfil |
 | `-D` | Threads decodificadoras FFmpeg (default: 0 = auto) |
-| `-E` | Threads codificadoras LZ4 (default: 1) |
+| `-E` | Threads codificadoras LZ4 (1 = single-thread, >1 = multithread) |
 | `-w` | Habilita escrita do arquivo de saída (default: desabilitado) |
 
 ### Decodificação — FFmpeg (`src/decode.cpp`)
@@ -278,13 +251,6 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 | `-p` | Nome do perfil |
 | `-D` | Threads decodificadoras (default: 1) |
 | `-w` | Habilita escrita do arquivo de saída (default: desabilitado) |
-
-### Macros de Compilação
-
-| Macro | Valor | Descrição |
-|-------|-------|-----------|
-| `USE_LZ_COMPRESS` | — | Habilita compressão LZ4 no single-thread |
-| `LZ_CONFIG` | `1`–`12` | Nível de aceleração (LZ4) ou compressão (LZ4HC) |
 
 ### Opções de CLI para Threads
 

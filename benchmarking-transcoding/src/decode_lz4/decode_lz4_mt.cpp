@@ -51,11 +51,6 @@ std::atomic<int> g_decode_frame_count{0};
 // Funções de Inicialização
 // ============================================================================
 
-int mt_initialize_synchronization() {
-    // Sincronização agora é gerenciada pela Queue (mutex + cond internos)
-    return 0;
-}
-
 int mt_initialize_write_control(FILE *output_file) {
     g_next_to_write = 0;
     g_output_file = output_file;
@@ -73,10 +68,6 @@ int mt_initialize_state(FILE *input_file) {
 // ============================================================================
 // Funções de Limpeza
 // ============================================================================
-
-void mt_cleanup_synchronization() {
-    // Sincronização agora é gerenciada pela Queue
-}
 
 void mt_cleanup_write_control() {
     g_output_file = NULL;
@@ -339,17 +330,8 @@ int mt_decode_main(int num_threads, const std::string &input_file,
         return -1;
     }
 
-    // Inicializa sincronização (stub — gerenciada pela Queue)
-    if (mt_initialize_synchronization() < 0) {
-        queue_destroy(&g_frame_queue);
-        fclose(g_input_file);
-        if (g_enable_write && g_output_file) fclose(g_output_file);
-        return -1;
-    }
-
     // Inicializa controle de escrita
     if (mt_initialize_write_control(g_output_file) < 0) {
-        mt_cleanup_synchronization();
         queue_destroy(&g_frame_queue);
         fclose(g_input_file);
         if (g_enable_write && g_output_file) fclose(g_output_file);
@@ -359,7 +341,6 @@ int mt_decode_main(int num_threads, const std::string &input_file,
     // Inicializa estado
     if (mt_initialize_state(g_input_file) < 0) {
         mt_cleanup_write_control();
-        mt_cleanup_synchronization();
         queue_destroy(&g_frame_queue);
         fclose(g_input_file);
         if (g_enable_write && g_output_file) fclose(g_output_file);
@@ -376,7 +357,6 @@ int mt_decode_main(int num_threads, const std::string &input_file,
         free(thread_contexts);
         mt_cleanup_state();
         mt_cleanup_write_control();
-        mt_cleanup_synchronization();
         queue_destroy(&g_frame_queue);
         fclose(g_input_file);
         if (g_enable_write && g_output_file) fclose(g_output_file);
@@ -399,7 +379,6 @@ int mt_decode_main(int num_threads, const std::string &input_file,
             free(thread_contexts);
             mt_cleanup_state();
             mt_cleanup_write_control();
-            mt_cleanup_synchronization();
             queue_destroy(&g_frame_queue);
             fclose(g_input_file);
             if (g_enable_write && g_output_file) fclose(g_output_file);
@@ -421,7 +400,6 @@ int mt_decode_main(int num_threads, const std::string &input_file,
         free(thread_contexts);
         mt_cleanup_state();
         mt_cleanup_write_control();
-        mt_cleanup_synchronization();
         queue_destroy(&g_frame_queue);
         fclose(g_input_file);
         if (g_enable_write && g_output_file) fclose(g_output_file);
@@ -493,7 +471,6 @@ int mt_decode_main(int num_threads, const std::string &input_file,
     // 2. Limpeza de sincronização (ANTES de liberar contextos das threads)
     mt_cleanup_state();
     mt_cleanup_write_control();
-    mt_cleanup_synchronization();
     queue_destroy(&g_frame_queue);
 
     // 3. Libera contextos das threads (DEPOIS dos cleanups)

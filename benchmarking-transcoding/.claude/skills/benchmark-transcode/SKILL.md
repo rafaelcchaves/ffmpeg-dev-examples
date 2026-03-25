@@ -263,7 +263,7 @@ gcc -O3 -Wall -Wno-unused-variable \
 ```bash
 gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
     -I/usr/local/include -L/usr/local/lib \
-    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2
+    -lavcodec -lavutil -lavformat -lm
 ```
 
 ---

@@ -6,45 +6,27 @@
 #include <libavutil/time.h>
 #include <math.h>
 #include <inttypes.h>
-#include <unistd.h> 
+#include <unistd.h>
 #include <libavformat/avformat.h>
 #include <libavutil/imgutils.h>
 
-#include <lz4hc.h>
-#include <lz4.h>
-#include <lzo/lzo1x.h>
-
-#include "frame_types.h"
-
 /*
 To run psnr:
-ffmpeg -i <compressed> -i <original> -lavfi psnr -f null - 
+ffmpeg -i <compressed> -i <original> -lavfi psnr -f null -
 To run ssim:
-ffmpeg -i <compressed> -i <original> -lavfi ssim -f null - 
+ffmpeg -i <compressed> -i <original> -lavfi ssim -f null -
 To compile and execute:
 gcc transcode.c -o transcode -lavformat -lavcodec -lavutil -lm
 ./transcode -i <mp4_input_file> -o <output_path> -e <encoder_name>
-To execute tests: 
+To execute tests:
  */
-#define INBUF_SIZE 10000
-#ifndef LZ_CONFIG
-#define LZ_CONFIG 1
-#endif
 
-int pts;
-int dts;
 int frames;
 int num_decoder_threads = 0;
 int num_encoder_threads = 0;
-int maxCapacity;
-char *compressedFrame = NULL;
 const char *encoder_name = NULL;
 const char *profile_name = NULL;
 static int g_enable_write = 0;
-
-uint8_t *image_data[4];
-int image_linesize[4];
-int image_bufsize;
 
 static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket *inpkt, AVFrame *frame, AVPacket *outpkt,
                       FILE *outfile)
@@ -71,7 +53,6 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
         }
         frames++;
 
-#ifndef USE_LZ_COMPRESS
         if (strcmp(enc_ctx->codec->name, "mjpeg") == 0) {
             frame->quality = FF_QP2LAMBDA * 2;
         }
@@ -94,37 +75,11 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
             if (g_enable_write) fwrite(outpkt->data, 1, outpkt->size, outfile);
             av_packet_unref(outpkt);
         }
-#else
-        /* copy decoded frame to destination buffer:
-        * this is required since rawvideo expects non aligned data */
-        av_image_copy(image_data, image_linesize,
-                      (const uint8_t **)(frame->data), frame->linesize,
-                      frame->format, frame->width, frame->height);
-        int compressedSize = 0;
-        if(strcmp(encoder_name, "lz4hc") == 0)
-            compressedSize = LZ4_compress_HC((const char*)image_data[0], compressedFrame, image_bufsize, maxCapacity, LZ_CONFIG);
-        else if(strcmp(encoder_name, "lz4") == 0)
-            compressedSize = LZ4_compress_fast((const char*)image_data[0], compressedFrame, image_bufsize, maxCapacity, LZ_CONFIG);
-        
-        if(inpkt)
-            printf("%s,%d,%d,transcoding,%ld,%d\n", profile_name, num_decoder_threads, num_encoder_threads, av_gettime() - frame->pkt_dts, LZ_CONFIG);
-        if(compressedSize == 0){
-            fprintf(stderr, "Error: Compress failed\n");
-            exit(1);
-        }
-
-        FrameHeader hf = {image_bufsize, compressedSize, frame->width, frame->height, frame->format};
-        if (g_enable_write) {
-            fwrite(&hf, sizeof(FrameHeader), 1, outfile);
-            fwrite(compressedFrame, 1, compressedSize, outfile);
-        }
-#endif
 
     }
     if(inpkt)
 	    return;
 
-#ifndef USE_LZ_COMPRESS
     ret_enc = avcodec_send_frame(enc_ctx, NULL);
     while (ret_enc >= 0) {
         ret_enc = avcodec_receive_packet(enc_ctx, outpkt);
@@ -137,7 +92,6 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
         if (g_enable_write) fwrite(outpkt->data, 1, outpkt->size, outfile);
         av_packet_unref(outpkt);
     }
-#endif
 
 }
 int main(int argc, char** argv){
@@ -148,16 +102,16 @@ int main(int argc, char** argv){
     FILE *output;
     AVFormatContext *fmt_ctx = NULL;
     int video_stream_index = -1;
-    
+
     const AVCodec *incodec;
     AVCodecContext *incodec_ctx= NULL;
     AVPacket *inpkt;
-    
+
     const AVCodec *outcodec;
     AVCodecContext *outcodec_ctx= NULL;
     AVPacket *outpkt;
     int opt;
-    
+
     while ((opt = getopt(argc, argv, "i:o:e:p:D:E:w")) != -1) {
         switch (opt) {
             case 'i':
@@ -185,7 +139,7 @@ int main(int argc, char** argv){
                 fprintf(stderr, "Usage: %s -i <input-file> [-o <output-file>] -e <encoder> -p <profile> [-D <decoder_threads>] [-E <encoder_threads>] [-w]\n", argv[0]);
                 fprintf(stderr, "  -i  Input video file\n");
                 fprintf(stderr, "  -o  Output file (default: output)\n");
-                fprintf(stderr, "  -e  Encoder name (e.g., mjpeg, libsvtjpegxs, lz4, lz4hc)\n");
+                fprintf(stderr, "  -e  Encoder name (e.g., mjpeg, libsvtjpegxs)\n");
                 fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
                 fprintf(stderr, "  -D  Decoder threads (default: 0 = auto)\n");
                 fprintf(stderr, "  -E  Encoder threads (default: 0 = auto)\n");
@@ -197,7 +151,7 @@ int main(int argc, char** argv){
         fprintf(stderr, "Usage: %s -i <input-file> [-o <output-file>] -e <encoder> -p <profile> [-D <decoder_threads>] [-E <encoder_threads>] [-w]\n", argv[0]);
         fprintf(stderr, "  -i  Input video file\n");
         fprintf(stderr, "  -o  Output file (default: output)\n");
-        fprintf(stderr, "  -e  Encoder name (e.g., mjpeg, libsvtjpegxs, lz4, lz4hc)\n");
+        fprintf(stderr, "  -e  Encoder name (e.g., mjpeg, libsvtjpegxs)\n");
         fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
         fprintf(stderr, "  -D  Decoder threads (default: 0 = auto)\n");
         fprintf(stderr, "  -E  Encoder threads (default: 0 = auto)\n");
@@ -214,14 +168,14 @@ int main(int argc, char** argv){
     } else {
         output = NULL;
     }
- 
+
     AVFrame *frame;
     frame = av_frame_alloc();
     if (!frame) {
         fprintf(stderr, "Could not allocate video frame\n");
         exit(1);
     }
- 
+
     inpkt = av_packet_alloc();
     outpkt = av_packet_alloc();
     if (!inpkt || !outpkt)
@@ -251,7 +205,7 @@ int main(int argc, char** argv){
         fps_double = 30.0; // Default to 30 fps if not found
     }
             int fps = (int)round(fps_double); // Convert to int for AVCodecContext
-         
+
             incodec = avcodec_find_decoder(video_stream->codecpar->codec_id);
             if (!incodec) {
                 fprintf(stderr, "Failed to find %s codec (%d)\n", avcodec_get_name(video_stream->codecpar->codec_id), video_stream_index);        exit(1);
@@ -261,7 +215,7 @@ int main(int argc, char** argv){
         fprintf(stderr, "Could not allocate video codec context\n");
         exit(1);
     }
-    
+
     if (avcodec_parameters_to_context(incodec_ctx, video_stream->codecpar) < 0) {
         fprintf(stderr, "Failed to copy codec parameters to decoder context\n");
         exit(1);
@@ -273,8 +227,7 @@ int main(int argc, char** argv){
         fprintf(stderr, "Could not open codec\n");
         exit(1);
     }
-    
-#ifndef USE_LZ_COMPRESS
+
     outcodec = avcodec_find_encoder_by_name(encoder_name);
     if (!outcodec) {
         fprintf(stderr, "Codec '%s' not found\n", encoder_name);
@@ -310,20 +263,6 @@ int main(int argc, char** argv){
         fprintf(stderr, "Could not open codec: %s\n", av_err2str(ret));
         exit(1);
     }
-#else
-    /* allocate image where the decoded image will be put */
-    ret = av_image_alloc(image_data, image_linesize, width, height, video_stream->codecpar->format, 1);
-    if (ret < 0) {
-        fprintf(stderr, "Não foi possível alocar o buffer de vídeo decodificado\n");
-        return ret;
-    }
-    image_bufsize = ret;
-    maxCapacity = LZ4_compressBound(image_bufsize);
-    if(!(compressedFrame = (char*)malloc(maxCapacity))){
-        fprintf(stderr, "Error: Could not allocate compressed buffer\n");
-        return 1;
-    }
-#endif
 
     int64_t start_time;
     start_time = av_gettime();
@@ -335,14 +274,9 @@ int main(int argc, char** argv){
     }
     transcode(incodec_ctx, outcodec_ctx, NULL, frame, outpkt, output);
 
-#ifndef USE_LZ_COMPRESS
     printf("%s,%d,%d,total,%ld\n", profile_name, num_decoder_threads, num_encoder_threads, av_gettime() - start_time);
     printf("%s,%d,%d,fps,%lf\n", profile_name, num_decoder_threads, num_encoder_threads, (frames*1000000.0)/(av_gettime() - start_time));
-#else
-    printf("%s,%d,%d,total,%ld,%d\n", profile_name, num_decoder_threads, num_encoder_threads, av_gettime() - start_time, LZ_CONFIG);
-    printf("%s,%d,%d,fps,%lf,%d\n", profile_name, num_decoder_threads, num_encoder_threads, (frames*1000000.0)/(av_gettime() - start_time), LZ_CONFIG);
-#endif
-    
+
     avformat_close_input(&fmt_ctx);
     avcodec_free_context(&outcodec_ctx);
     avcodec_free_context(&incodec_ctx);
@@ -350,7 +284,5 @@ int main(int argc, char** argv){
     av_packet_free(&inpkt);
     av_packet_free(&outpkt);
     if (output) fclose(output);
-    free(compressedFrame);
-    av_free(image_data[0]);
     return 0;
 }
