@@ -7,7 +7,8 @@ Este projeto contém um conjunto de scripts para realizar benchmarking de transc
 -   `dataset/generate.sh`: Gera arquivos de vídeo codificados a partir de um arquivo YUV bruto.
 -   `src/transcode.c` / `transcode.sh`: Realiza a transcodificação de um vídeo para diferentes formatos (single-thread).
 -   `src/transcode_lz4/` / `transcode.sh`: Transcodificação LZ4/LZ4HC com suporte single-thread e multithread (arquitetura producer-consumer).
--   `src/decode.cpp` / `decode.sh`: Realiza a decodificação de um vídeo (FFmpeg).
+-   `src/decode.cpp` / `decode.sh`: Realiza a decodificação de um vídeo (FFmpeg). Para MJPEG com múltiplas threads (`-D > 1`), utiliza pipeline multithread automático com arquitetura producer-consumer (`src/decode_mjpeg_mt.cpp`).
+-   `src/decode_mjpeg_mt.h` / `src/decode_mjpeg_mt.cpp`: Decodificação MJPEG multithread (producer-consumer com N instâncias do decoder FFmpeg).
 -   `src/decode_lz4/` / `decode.sh`: Decodificação LZ4 multithread (arquitetura producer-consumer).
 -   `src/frame_types.h`: Tipos compartilhados entre encode e decode (`FrameHeader`, `FrameItem`).
 -   `src/queue.h` / `src/queue.c`: Fila genérica thread-safe com gerenciamento de ownership.
@@ -83,6 +84,8 @@ O benchmark utiliza **três perfis de configuração de threads** para avaliar d
 ### 3. Decodificar um Vídeo (`decode.sh`)
 
 Este script compila e executa o programa `src/decode.cpp` (ou os módulos em `src/decode_lz4/` para descompactação LZ4) para decodificar um vídeo, testando o desempenho com diferentes números de threads. A decodificação LZ4 multithread utiliza arquitetura producer-consumer com fila genérica (`Queue`), onde uma thread lê frames do arquivo e múltiplas threads descompactam com LZ4 em paralelo.
+
+**Decodificação MJPEG multithread**: Quando o vídeo de entrada utiliza codec MJPEG e `-D > 1`, o binário `decode` ativa automaticamente um pipeline multithread com arquitetura producer-consumer (`src/decode_mjpeg_mt.cpp`). O decoder MJPEG do FFmpeg é single-thread por natureza (não possui `AV_CODEC_CAP_FRAME_THREADS` nem `AV_CODEC_CAP_SLICE_THREADS`), então o paralelismo é implementado a nível de aplicação: múltiplas instâncias do decoder FFmpeg distribuem frames via Queue. Com `-D 1`, o caminho single-thread padrão é utilizado (sem overhead de Queue). Para codecs com threading nativo (H.264, HEVC, VP9 etc.), o FFmpeg gerencia o threading internamente.
 
 #### Perfis de Threads
 
@@ -201,13 +204,13 @@ gcc -O3 -Wall -Wno-unused-variable \
 | `-E` | Threads codificadoras LZ4 (1 = single-thread, >1 = multithread) |
 | `-w` | Habilita escrita do arquivo de saída (default: desabilitado) |
 
-### Decodificação — FFmpeg (`src/decode.cpp`)
+### Decodificação — FFmpeg (`src/decode.cpp` + MJPEG MT)
 
 ```bash
 g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
-    src/decode.cpp src/cpu_stats.cpp -o decode \
-    -I/usr/local/include -L/usr/local/lib \
-    -lavcodec -lavutil -lavformat -lm
+    src/decode.cpp src/decode_mjpeg_mt.cpp src/queue.c src/cpu_stats.cpp \
+    -o decode -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm -lpthread
 
 ./decode -i video.mp4 -o output.yuv -p balanced -D 4
 
@@ -291,7 +294,18 @@ profile,decoder_threads,encoder_threads,type,time
 
 
 
-### 5. Analisar Resultados de Transcodificação (`results/transcoding/analyze_transcoding.py`)
+### 5. Verificar Corretude (SSIM)
+
+**Importante**: A comparação SSIM deve ser feita exclusivamente entre arquivos YUV decodificados. Comparar um YUV decodificado diretamente com um vídeo comprimido (MP4) produz resultados incorretos devido a diferenças de range (YUVJ420P full-range vs YUV420P limited-range).
+
+```bash
+# Correto: YUV vs YUV (ambos decodificados)
+ffmpeg -s 3840x2160 -pix_fmt yuv420p -i decoded/output1.yuv \
+       -s 3840x2160 -pix_fmt yuv420p -i decoded/output2.yuv \
+       -lavfi ssim -f null -
+```
+
+### 6. Analisar Resultados de Transcodificação (`results/transcoding/analyze_transcoding.py`)
 
 Este script Python gera visualizações e análises dos resultados de benchmark de transcodificação.
 
@@ -313,7 +327,7 @@ python3 results/transcoding/analyze_transcoding.py [arquivo_csv1.csv arquivo_csv
 python3 results/transcoding/analyze_transcoding.py resultados_transcode.csv
 ```
 
-### 6. Analisar Resultados de Decodificação (`results/decoding/analyze_decoding.py`)
+### 7. Analisar Resultados de Decodificação (`results/decoding/analyze_decoding.py`)
 
 Este script Python gera visualizações e análises dos resultados de benchmark de decodificação.
 

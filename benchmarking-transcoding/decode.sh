@@ -53,8 +53,9 @@ if [ "$lz_algorithm" == "" ]; then
 
     echo ">>> Building decode ..."
     g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
-        src/decode.cpp src/cpu_stats.cpp -o decode -I/usr/local/include -L/usr/local/lib \
-        -lavcodec -lavutil -lavformat -lm
+        src/decode.cpp src/decode_mjpeg_mt.cpp src/queue.c src/cpu_stats.cpp \
+        -o decode -I/usr/local/include -L/usr/local/lib \
+        -lavcodec -lavutil -lavformat -lm -lpthread
 
     for profile_config in "${profiles[@]}"; do
         IFS=':' read -r profile_name decoder_threads_config <<< "$profile_config"

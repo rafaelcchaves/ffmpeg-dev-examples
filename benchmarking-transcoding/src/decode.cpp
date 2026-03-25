@@ -10,6 +10,7 @@ extern "C" {
 #include <string.h>
 #include <unistd.h>
 #include "cpu_stats.h"
+#include "decode_mjpeg_mt.h"
 
 int frames;
 int num_decoder_threads = 0;
@@ -149,6 +150,16 @@ int main(int argc, char** argv){
         exit(1);
     }
     AVStream *video_stream = fmt_ctx->streams[video_stream_index];
+
+    // Dispatch: MJPEG com threads > 1 usa pipeline multithread dedicado
+    if (video_stream->codecpar->codec_id == AV_CODEC_ID_MJPEG && num_decoder_threads > 1) {
+        avformat_close_input(&fmt_ctx);
+        if (output) fclose(output);
+        av_frame_free(&frame);
+        av_packet_free(&inpkt);
+        return mjpeg_mt_decode(infilename, outfilename, profile_name,
+                               num_decoder_threads, g_enable_write);
+    }
 
     incodec = avcodec_find_decoder(video_stream->codecpar->codec_id);
     if (!incodec) {

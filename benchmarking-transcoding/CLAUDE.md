@@ -7,7 +7,7 @@ Este projeto implementa um sistema de benchmarking para transcodificação e dec
 ### Características Principais
 
 - **Transcodificação**: Suporte a MJPEG, JPEG XS, LZ4 e LZ4HC
-- **Decodificação**: FFmpeg padrão e LZ4 multithread
+- **Decodificação**: FFmpeg padrão, LZ4 multithread e MJPEG multithread
 - **Arquitetura Multithread**: Producer-consumer com fila genérica (Queue)
 - **Flag de Escrita**: Permite benchmarks sem I/O de disco (padrão)
 - **Perfis de Threads**: low_latency, balanced, high_throughput
@@ -21,7 +21,9 @@ benchmarking-transcoding/
 │   ├── frame_types.h            # Tipos compartilhados (FrameHeader, FrameItem)
 │   ├── queue.h / queue.c        # Fila genérica thread-safe com ownership
 │   ├── transcode.c              # Transcodificação single-thread
-│   ├── decode.cpp               # Decodificação FFmpeg
+│   ├── decode.cpp               # Decodificação FFmpeg (com dispatch MJPEG MT automático)
+│   ├── decode_mjpeg_mt.h        # Header do pipeline MJPEG multithread
+│   ├── decode_mjpeg_mt.cpp      # Decodificação MJPEG multithread (producer-consumer)
 │   ├── transcode_lz4/           # Transcodificação LZ4 (single-thread + multithread)
 │   │   ├── transcode_lz4_main.c
 │   │   ├── transcode_lz4_st.c   # Encode single-thread
@@ -51,8 +53,11 @@ O sistema multithread utiliza uma arquitetura **producer-consumer** com uma fila
 Encode path:
   Producer (FFmpeg decode)  →  Queue<FrameItem>  →  Consumers (LZ4/LZ4HC compress)
 
-Decode path:
+Decode path (LZ4):
   Producer (file reader)    →  Queue<FrameItem>  →  Consumers (LZ4 decompress)
+
+Decode path (MJPEG):
+  Producer (avformat demux) →  Queue<FrameItem>  →  Consumers (FFmpeg MJPEG decode)
 ```
 
 #### Tipos Compartilhados (`src/frame_types.h`)
@@ -184,15 +189,18 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
     -lavutil -lm -llz4 -lpthread
 ```
 
-#### Decodificação - FFmpeg (decode.cpp)
+#### Decodificação - FFmpeg (decode.cpp + MJPEG MT)
 
 ```bash
 # Compilação única (escrita controlada via -w em tempo de execução)
+# Inclui decode_mjpeg_mt.cpp, queue.c e -lpthread para suporte MJPEG multithread
 g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
-    src/decode.cpp src/cpu_stats.cpp -o decode \
-    -I/usr/local/include -L/usr/local/lib \
-    -lavcodec -lavutil -lavformat -lm
+    src/decode.cpp src/decode_mjpeg_mt.cpp src/queue.c src/cpu_stats.cpp \
+    -o decode -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm -lpthread
 ```
+
+**Dispatch automatico de codec**: O binario `decode` detecta automaticamente o codec do video de entrada. Se o codec for MJPEG e `-D > 1`, utiliza o pipeline multithread com N instancias do decoder FFmpeg. Para demais codecs (H.264, HEVC, VP9 etc.), utiliza o threading nativo do FFmpeg. Com `-D 1`, sempre usa o caminho single-thread (sem overhead de Queue).
 
 ### Opções de CLI para Threads
 
@@ -306,6 +314,19 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 
 ---
 
+## Verificação de Corretude (SSIM)
+
+**Importante**: A comparacao SSIM so deve ser feita entre arquivos YUV decodificados (ambos convertidos para YUV). Comparar um YUV decodificado diretamente com um video comprimido (MP4) produz resultados incorretos devido a diferencas de range (YUVJ420P full-range vs YUV420P limited-range).
+
+```bash
+# Correto: YUV vs YUV (ambos decodificados)
+ffmpeg -s 3840x2160 -pix_fmt yuv420p -i decoded/output1.yuv \
+       -s 3840x2160 -pix_fmt yuv420p -i decoded/output2.yuv \
+       -lavfi ssim -f null -
+```
+
+---
+
 ## Análise de Resultados
 
 ### Scripts de Análise
@@ -356,9 +377,10 @@ low_latency,1,1,fps,60.5,1
     -o decoded/ \
     -w
 
-# 3. Verificar SSIM
-ffmpeg -s 1920x1080 -i decoded/high_throughput.yuv \
-       -i dataset/ssim95_avc.mp4 \
+# 3. Verificar SSIM (comparar YUV decodificado com YUV de referencia)
+# Importante: ambos os arquivos devem estar em formato YUV
+ffmpeg -s 3840x2160 -pix_fmt yuv420p -i decoded/high_throughput.yuv \
+       -s 3840x2160 -pix_fmt yuv420p -i reference.yuv \
        -lavfi ssim -f null -
 ```
 
