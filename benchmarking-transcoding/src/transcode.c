@@ -31,12 +31,6 @@ To execute tests:
 #define LZ_CONFIG 1
 #endif
 
-// Flag de compilação para habilitar/desabilitar escrita de arquivo de saída
-// Padrão: desabilitado (benchmark sem I/O de disco)
-#ifndef ENABLE_OUTPUT_WRITE
-#define ENABLE_OUTPUT_WRITE 0
-#endif
-
 int pts;
 int dts;
 int frames;
@@ -46,6 +40,7 @@ int maxCapacity;
 char *compressedFrame = NULL;
 const char *encoder_name = NULL;
 const char *profile_name = NULL;
+static int g_enable_write = 0;
 
 uint8_t *image_data[4];
 int image_linesize[4];
@@ -96,11 +91,7 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
             }
 	    if(inpkt)
             	printf("%s,%d,%d,transcoding,%ld\n", profile_name, num_decoder_threads, num_encoder_threads, av_gettime() - outpkt->dts);
-#if ENABLE_OUTPUT_WRITE
-            fwrite(outpkt->data, 1, outpkt->size, outfile);
-#else
-            (void)outfile;  // Avoid unused warning
-#endif
+            if (g_enable_write) fwrite(outpkt->data, 1, outpkt->size, outfile);
             av_packet_unref(outpkt);
         }
 #else
@@ -123,13 +114,10 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
         }
 
         FrameHeader hf = {image_bufsize, compressedSize, frame->width, frame->height, frame->format};
-#if ENABLE_OUTPUT_WRITE
-        fwrite(&hf, sizeof(FrameHeader), 1, outfile);
-        fwrite(compressedFrame, 1, compressedSize, outfile);
-#else
-        (void)outfile;  // Avoid unused warning
-        (void)hf;  // Avoid unused warning
-#endif
+        if (g_enable_write) {
+            fwrite(&hf, sizeof(FrameHeader), 1, outfile);
+            fwrite(compressedFrame, 1, compressedSize, outfile);
+        }
 #endif
 
     }
@@ -146,11 +134,7 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
             fprintf(stderr, "Error during encoding\n");
             exit(1);
         }
-#if ENABLE_OUTPUT_WRITE
-        fwrite(outpkt->data, 1, outpkt->size, outfile);
-#else
-        (void)outfile;  // Avoid unused warning
-#endif
+        if (g_enable_write) fwrite(outpkt->data, 1, outpkt->size, outfile);
         av_packet_unref(outpkt);
     }
 #endif
@@ -174,7 +158,7 @@ int main(int argc, char** argv){
     AVPacket *outpkt;
     int opt;
     
-    while ((opt = getopt(argc, argv, "i:o:e:p:D:E:")) != -1) {
+    while ((opt = getopt(argc, argv, "i:o:e:p:D:E:w")) != -1) {
         switch (opt) {
             case 'i':
                 infilename = optarg;
@@ -194,37 +178,42 @@ int main(int argc, char** argv){
             case 'E':
                 num_encoder_threads = atoi(optarg);
                 break;
+            case 'w':
+                g_enable_write = 1;
+                break;
             default:
-                fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -e <encoder> -p <profile> [-D <decoder_threads>] [-E <encoder_threads>]\n", argv[0]);
+                fprintf(stderr, "Usage: %s -i <input-file> [-o <output-file>] -e <encoder> -p <profile> [-D <decoder_threads>] [-E <encoder_threads>] [-w]\n", argv[0]);
                 fprintf(stderr, "  -i  Input video file\n");
-                fprintf(stderr, "  -o  Output file (encoded video or compressed data)\n");
+                fprintf(stderr, "  -o  Output file (default: output)\n");
                 fprintf(stderr, "  -e  Encoder name (e.g., mjpeg, libsvtjpegxs, lz4, lz4hc)\n");
                 fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
                 fprintf(stderr, "  -D  Decoder threads (default: 0 = auto)\n");
                 fprintf(stderr, "  -E  Encoder threads (default: 0 = auto)\n");
+                fprintf(stderr, "  -w  Enable output file writing (default: disabled for benchmark)\n");
                 exit(1);
         }
     }
-    if (infilename == NULL || outfilename == NULL || encoder_name == NULL || profile_name == NULL) {
-        fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -e <encoder> -p <profile> [-D <decoder_threads>] [-E <encoder_threads>]\n", argv[0]);
+    if (infilename == NULL || encoder_name == NULL || profile_name == NULL) {
+        fprintf(stderr, "Usage: %s -i <input-file> [-o <output-file>] -e <encoder> -p <profile> [-D <decoder_threads>] [-E <encoder_threads>] [-w]\n", argv[0]);
         fprintf(stderr, "  -i  Input video file\n");
-        fprintf(stderr, "  -o  Output file (encoded video or compressed data)\n");
+        fprintf(stderr, "  -o  Output file (default: output)\n");
         fprintf(stderr, "  -e  Encoder name (e.g., mjpeg, libsvtjpegxs, lz4, lz4hc)\n");
         fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
         fprintf(stderr, "  -D  Decoder threads (default: 0 = auto)\n");
         fprintf(stderr, "  -E  Encoder threads (default: 0 = auto)\n");
+        fprintf(stderr, "  -w  Enable output file writing (default: disabled for benchmark)\n");
         exit(1);
     }
-#if ENABLE_OUTPUT_WRITE
-    output = fopen(outfilename, "wb");
-    if (!output) {
-        fprintf(stderr, "Could not open %s\n", outfilename);
-        exit(1);
+    if (!outfilename) outfilename = "output";
+    if (g_enable_write) {
+        output = fopen(outfilename, "wb");
+        if (!output) {
+            fprintf(stderr, "Could not open %s\n", outfilename);
+            exit(1);
+        }
+    } else {
+        output = NULL;
     }
-#else
-    output = NULL;  // No file opened when writes disabled
-    (void)outfilename;  // Avoid unused warning
-#endif
  
     AVFrame *frame;
     frame = av_frame_alloc();
@@ -360,9 +349,7 @@ int main(int argc, char** argv){
     av_frame_free(&frame);
     av_packet_free(&inpkt);
     av_packet_free(&outpkt);
-#if ENABLE_OUTPUT_WRITE
     if (output) fclose(output);
-#endif
     free(compressedFrame);
     av_free(image_data[0]);
     return 0;

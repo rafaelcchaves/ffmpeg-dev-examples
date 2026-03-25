@@ -38,13 +38,6 @@ echo "profile,decoder_threads,encoder_threads,type,time" > "$results_file"
 
 mkdir -p "$output_dir"
 
-# Define WRITE_FLAG based on enable_write option
-if [ "$enable_write" -eq 1 ]; then
-    WRITE_FLAG="-DENABLE_OUTPUT_WRITE=1"
-else
-    WRITE_FLAG=""
-fi
-
 if [ "$lz_algorithm" == "" ]; then
 
     # Define thread profiles: name:decoder_threads
@@ -61,7 +54,7 @@ if [ "$lz_algorithm" == "" ]; then
     echo ">>> Building decode ..."
     g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
         src/decode.cpp src/cpu_stats.cpp -o decode -I/usr/local/include -L/usr/local/lib \
-        -lavcodec -lavutil -lavformat -lm $WRITE_FLAG
+        -lavcodec -lavutil -lavformat -lm
 
     for profile_config in "${profiles[@]}"; do
         IFS=':' read -r profile_name decoder_threads_config <<< "$profile_config"
@@ -69,7 +62,9 @@ if [ "$lz_algorithm" == "" ]; then
         output_path="$output_dir/${profile_name}.yuv"
 
         echo ">>> Running decode for $profile_name with -D $decoder_threads_config ..."
-        "./decode" -i "$in_file" -o "$output_path" -p "$profile_name" -D "$decoder_threads_config" >> "$results_file"
+        write_flag=""
+        if [ "$enable_write" -eq 1 ]; then write_flag="-w"; fi
+        "./decode" -i "$in_file" -o "$output_path" -p "$profile_name" -D "$decoder_threads_config" $write_flag >> "$results_file"
     done
 
     rm -f decode
@@ -101,7 +96,6 @@ else
 
     echo ">>> Building decode_lz4 ..."
     g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
-        $WRITE_FLAG \
         src/decode_lz4/decode_lz4_main.cpp src/decode_lz4/decode_lz4_mt.cpp \
         src/decode_lz4/frame_reader.cpp src/decode_lz4/frame_decoder.cpp \
         src/decode_lz4/frame_writer.cpp src/decode_lz4/stats.cpp \
@@ -115,7 +109,9 @@ else
         output_path="$output_dir/${profile_name}.yuv"
 
         echo ">>> Running decode_lz4 for $profile_name with -D $decoder_threads_config ..."
-        "./decode_lz4" -i "$in_file" -o "$output_path" -p "$profile_name" -D "$decoder_threads_config" >> "$results_file" 2>&1
+        write_flag=""
+        if [ "$enable_write" -eq 1 ]; then write_flag="-w"; fi
+        "./decode_lz4" -i "$in_file" -o "$output_path" -p "$profile_name" -D "$decoder_threads_config" $write_flag >> "$results_file" 2>&1
     done
 
     rm -f decode_lz4

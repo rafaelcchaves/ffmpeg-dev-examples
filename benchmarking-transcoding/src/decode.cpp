@@ -14,18 +14,17 @@ extern "C" {
 
 #define INBUF_SIZE 10000
 
-// Flag de compilação para habilitar/desabilitar escrita de arquivo de saída
-// Padrão: desabilitado (benchmark sem I/O de disco)
-#ifndef ENABLE_OUTPUT_WRITE
-#define ENABLE_OUTPUT_WRITE 0
-#endif
-
 int frames;
 int num_decoder_threads = 0;
 const char *profile_name = NULL;
+static bool g_enable_write = false;
 
 static void decode(AVCodecContext *dec_ctx, AVPacket *inpkt, AVFrame *frame, FILE *outfile)
 {
+    static uint8_t *image_data[4];
+    static int image_linesize[4];
+    static int image_bufsize = 0;
+
     int ret_dec;
     if(inpkt){
         if(dec_ctx->codec_id == AV_CODEC_ID_AV1)
@@ -50,6 +49,22 @@ static void decode(AVCodecContext *dec_ctx, AVPacket *inpkt, AVFrame *frame, FIL
         if(inpkt)
         printf("%s,%d,0,decoding,%ld\n", profile_name, num_decoder_threads, av_gettime() - frame->pkt_dts);
 
+        if (g_enable_write && outfile) {
+            if (image_bufsize == 0) {
+                image_bufsize = av_image_alloc(image_data, image_linesize,
+                                               frame->width, frame->height,
+                                               (AVPixelFormat)frame->format, 1);
+                if (image_bufsize < 0) {
+                    fprintf(stderr, "Error allocating image buffer\n");
+                    exit(1);
+                }
+            }
+            av_image_copy(image_data, image_linesize,
+                          (const uint8_t **)(frame->data), frame->linesize,
+                          (AVPixelFormat)frame->format, frame->width, frame->height);
+            fwrite(image_data[0], 1, image_bufsize, outfile);
+        }
+
         av_frame_unref(frame);
     }
 }
@@ -66,7 +81,7 @@ int main(int argc, char** argv){
     AVFrame *frame = NULL;
 
     int opt;
-    while ((opt = getopt(argc, argv, "i:o:p:D:")) != -1) {
+    while ((opt = getopt(argc, argv, "i:o:p:D:w")) != -1) {
         switch (opt) {
             case 'i':
                 infilename = optarg;
@@ -80,33 +95,38 @@ int main(int argc, char** argv){
             case 'D':
                 num_decoder_threads = atoi(optarg);
                 break;
+            case 'w':
+                g_enable_write = true;
+                break;
             default:
-                fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -p <profile> [-D <decoder_threads>]\n", argv[0]);
+                fprintf(stderr, "Usage: %s -i <input-file> [-o <output-file>] -p <profile> [-D <decoder_threads>] [-w]\n", argv[0]);
                 fprintf(stderr, "  -i  Input video file\n");
-                fprintf(stderr, "  -o  Output YUV file\n");
+                fprintf(stderr, "  -o  Output YUV file (default: output.yuv)\n");
                 fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
                 fprintf(stderr, "  -D  Decoder threads (default: 0 = auto)\n");
+                fprintf(stderr, "  -w  Enable output file writing (default: disabled for benchmark)\n");
                 exit(1);
         }
     }
-    if (infilename == NULL || outfilename == NULL || profile_name == NULL) {
-        fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -p <profile> [-D <decoder_threads>]\n", argv[0]);
+    if (infilename == NULL || profile_name == NULL) {
+        fprintf(stderr, "Usage: %s -i <input-file> [-o <output-file>] -p <profile> [-D <decoder_threads>] [-w]\n", argv[0]);
         fprintf(stderr, "  -i  Input video file\n");
-        fprintf(stderr, "  -o  Output YUV file\n");
+        fprintf(stderr, "  -o  Output YUV file (default: output.yuv)\n");
         fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
         fprintf(stderr, "  -D  Decoder threads (default: 0 = auto)\n");
+        fprintf(stderr, "  -w  Enable output file writing (default: disabled for benchmark)\n");
         exit(1);
     }
-#if ENABLE_OUTPUT_WRITE
-    output = fopen(outfilename, "wb");
-    if (!output) {
-        fprintf(stderr, "Could not open %s\n", outfilename);
-        exit(1);
+    if (!outfilename) outfilename = "output.yuv";
+    if (g_enable_write) {
+        output = fopen(outfilename, "wb");
+        if (!output) {
+            fprintf(stderr, "Could not open %s\n", outfilename);
+            exit(1);
+        }
+    } else {
+        output = NULL;
     }
-#else
-    output = NULL;  // No file opened when writes disabled
-    (void)outfilename;  // Avoid unused warning
-#endif
 
     frame = av_frame_alloc();
     if (!frame) {
@@ -179,8 +199,6 @@ int main(int argc, char** argv){
     avcodec_free_context(&incodec_ctx);
     av_frame_free(&frame);
     av_packet_free(&inpkt);
-#if ENABLE_OUTPUT_WRITE
     if (output) fclose(output);
-#endif
     return 0;
 }

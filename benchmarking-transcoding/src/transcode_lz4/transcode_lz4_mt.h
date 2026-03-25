@@ -94,6 +94,7 @@ extern int g_encoder_type;
 extern int g_compression_level;
 extern const char *g_profile_name;
 extern bool g_debug_mode;
+extern bool g_enable_write;
 
 /** Métricas (atómicas) */
 extern volatile int64_t g_total_decode_time;

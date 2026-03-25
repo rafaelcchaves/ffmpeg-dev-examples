@@ -7,12 +7,6 @@
 #include "../cpu_stats.h"
 #include <unistd.h>
 
-// Flag de compilação para habilitar/desabilitar escrita de arquivo de saída
-// Padrão: desabilitado (benchmark sem I/O de disco)
-#ifndef ENABLE_OUTPUT_WRITE
-#define ENABLE_OUTPUT_WRITE 0
-#endif
-
 // ============================================================================
 // Definição das Variáveis Globais
 // ============================================================================
@@ -45,6 +39,7 @@ int g_encoder_type = ENCODER_TYPE_LZ4;
 int g_compression_level = 1;
 const char *g_profile_name = NULL;
 bool g_debug_mode = false;
+bool g_enable_write = false;
 
 // Métricas
 volatile int64_t g_total_decode_time = 0;
@@ -523,17 +518,15 @@ void *mt_encoder_thread(void *arg) {
         // Escreve frame no arquivo
         int64_t write_start = av_gettime();
 
-#if ENABLE_OUTPUT_WRITE
-        size_t written1 = fwrite(&header, sizeof(FrameHeader), 1, g_output_file);
-        size_t written2 = fwrite(ctx->compressed_buffer, 1, compressed_size, g_output_file);
+        if (g_enable_write) {
+            size_t written1 = fwrite(&header, sizeof(FrameHeader), 1, g_output_file);
+            size_t written2 = fwrite(ctx->compressed_buffer, 1, compressed_size, g_output_file);
 
-        if (written1 != 1 || written2 != (size_t)compressed_size) {
-            fprintf(stderr, "[Encoder %d] Erro ao escrever frame %d\n",
-                    thread_id, fi->sequence_number);
+            if (written1 != 1 || written2 != (size_t)compressed_size) {
+                fprintf(stderr, "[Encoder %d] Erro ao escrever frame %d\n",
+                        thread_id, fi->sequence_number);
+            }
         }
-#else
-        (void)header;  // Avoid unused warning
-#endif
 
         int64_t write_time = av_gettime() - write_start;
         g_total_write_time += write_time;
@@ -610,23 +603,20 @@ int mt_encode_main(const char *input_file, const char *output_file,
     }
 
     // Abre arquivo de saída
-#if ENABLE_OUTPUT_WRITE
-    outfile = fopen(output_file, "wb");
-    if (!outfile) {
-        fprintf(stderr, "Erro: Não foi possível abrir arquivo de saída: %s\n", output_file);
-        return -1;
+    if (g_enable_write) {
+        outfile = fopen(output_file, "wb");
+        if (!outfile) {
+            fprintf(stderr, "Erro: Não foi possível abrir arquivo de saída: %s\n", output_file);
+            return -1;
+        }
+    } else {
+        outfile = NULL;
     }
-#else
-    outfile = NULL;  // No file opened when writes disabled
-    (void)output_file;  // Avoid unused warning
-#endif
 
     // Inicializa fila
     if (mt_encode_init_queue() < 0) {
         fprintf(stderr, "Erro: Falha ao inicializar fila\n");
-#if ENABLE_OUTPUT_WRITE
         if (outfile) fclose(outfile);
-#endif
         return -1;
     }
 
@@ -634,9 +624,7 @@ int mt_encode_main(const char *input_file, const char *output_file,
     if (mt_encode_init_synchronization() < 0) {
         fprintf(stderr, "Erro: Falha ao inicializar sincronização\n");
         mt_encode_cleanup_queue();
-#if ENABLE_OUTPUT_WRITE
         if (outfile) fclose(outfile);
-#endif
         return -1;
     }
 
@@ -645,9 +633,7 @@ int mt_encode_main(const char *input_file, const char *output_file,
         fprintf(stderr, "Erro: Falha ao inicializar estado\n");
         mt_encode_cleanup_synchronization();
         mt_encode_cleanup_queue();
-#if ENABLE_OUTPUT_WRITE
         if (outfile) fclose(outfile);
-#endif
         return -1;
     }
 
@@ -662,9 +648,7 @@ int mt_encode_main(const char *input_file, const char *output_file,
         mt_encode_cleanup_state();
         mt_encode_cleanup_synchronization();
         mt_encode_cleanup_queue();
-#if ENABLE_OUTPUT_WRITE
         if (outfile) fclose(outfile);
-#endif
         return -1;
     }
 
@@ -692,9 +676,7 @@ int mt_encode_main(const char *input_file, const char *output_file,
             mt_encode_cleanup_state();
             mt_encode_cleanup_synchronization();
             mt_encode_cleanup_queue();
-#if ENABLE_OUTPUT_WRITE
             if (outfile) fclose(outfile);
-#endif
             return -1;
         }
     }
@@ -719,9 +701,7 @@ int mt_encode_main(const char *input_file, const char *output_file,
         mt_encode_cleanup_state();
         mt_encode_cleanup_synchronization();
         mt_encode_cleanup_queue();
-#if ENABLE_OUTPUT_WRITE
         if (outfile) fclose(outfile);
-#endif
         return -1;
     }
 
@@ -775,9 +755,7 @@ int mt_encode_main(const char *input_file, const char *output_file,
     }
 
     // Limpeza final
-#if ENABLE_OUTPUT_WRITE
     if (outfile) fclose(outfile);
-#endif
 
     for (int i = 0; i < num_encoder_threads; i++) {
         free(thread_contexts[i].compressed_buffer);

@@ -148,19 +148,8 @@ Os scripts `transcode.sh` e `decode.sh` compilam automaticamente:
 #### Transcodificação - LZ4/LZ4HC Multithread
 
 ```bash
-# Sem escrita (padrão - benchmark puro)
+# Compilação única (escrita controlada via -w em tempo de execução)
 gcc -O3 -Wall -Wno-unused-variable \
-    src/transcode_lz4/transcode_lz4_main.c \
-    src/transcode_lz4/transcode_lz4_mt.c \
-    src/queue.c \
-    src/cpu_stats.cpp \
-    -o transcode_mt \
-    -I/usr/local/include -L/usr/local/lib \
-    -lavcodec -lavutil -lavformat -lm -llz4 -lpthread
-
-# Com escrita habilitada
-gcc -O3 -Wall -Wno-unused-variable \
-    -DENABLE_OUTPUT_WRITE=1 \
     src/transcode_lz4/transcode_lz4_main.c \
     src/transcode_lz4/transcode_lz4_mt.c \
     src/queue.c \
@@ -182,18 +171,8 @@ gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
 #### Decodificação - LZ4 Multithread
 
 ```bash
-# Sem escrita (padrão)
+# Compilação única (escrita controlada via -w em tempo de execução)
 g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
-    src/decode_lz4/decode_lz4_main.cpp src/decode_lz4/decode_lz4_mt.cpp \
-    src/decode_lz4/frame_reader.cpp src/decode_lz4/frame_decoder.cpp \
-    src/decode_lz4/frame_writer.cpp src/decode_lz4/stats.cpp \
-    src/queue.c src/cpu_stats.cpp \
-    -o decode_lz4 -I/usr/local/include -L/usr/local/lib \
-    -lavutil -lm -llz4 -lpthread
-
-# Com escrita habilitada
-g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
-    -DENABLE_OUTPUT_WRITE=1 \
     src/decode_lz4/decode_lz4_main.cpp src/decode_lz4/decode_lz4_mt.cpp \
     src/decode_lz4/frame_reader.cpp src/decode_lz4/frame_decoder.cpp \
     src/decode_lz4/frame_writer.cpp src/decode_lz4/stats.cpp \
@@ -205,15 +184,8 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 #### Decodificação - FFmpeg (decode.cpp)
 
 ```bash
-# Sem escrita (padrão)
+# Compilação única (escrita controlada via -w em tempo de execução)
 g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
-    src/decode.cpp src/cpu_stats.cpp -o decode \
-    -I/usr/local/include -L/usr/local/lib \
-    -lavcodec -lavutil -lavformat -lm
-
-# Com escrita habilitada
-g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
-    -DENABLE_OUTPUT_WRITE=1 \
     src/decode.cpp src/cpu_stats.cpp -o decode \
     -I/usr/local/include -L/usr/local/lib \
     -lavcodec -lavutil -lavformat -lm
@@ -225,7 +197,6 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 |-------|---------|-----------|
 | `USE_LZ_COMPRESS` | - | Habilita compressão LZ4 |
 | `LZ_CONFIG` | 1 | Nível de aceleração (LZ4) ou compressão (LZ4HC) |
-| `ENABLE_OUTPUT_WRITE` | 0 | Habilita escrita de arquivos de saída |
 
 ### Opções de CLI para Threads
 
@@ -233,6 +204,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 |-------|---------|-----------|
 | `-D <N>` | 0 (auto) | Threads decodificadoras FFmpeg |
 | `-E <N>` | 1 | Threads codificadoras LZ4 |
+| `-w` | desabilitado | Habilita escrita de arquivos de saída |
 
 ---
 
@@ -308,31 +280,33 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 ### transcode_lz4_mt
 
 ```bash
-./transcode_mt -i <input> -o <output> -e <encoder> -l <level> -p <profile> -D <decoder_threads> -E <encoder_threads>
+./transcode_mt -i <input> [-o <output>] -e <encoder> -l <level> -p <profile> -D <decoder_threads> -E <encoder_threads> [-w]
 ```
 
 | Parâmetro | Descrição |
 |-----------|-----------|
 | `-i` | Arquivo de entrada |
-| `-o` | Arquivo de saída |
+| `-o` | Arquivo de saída (default: output.lz4) |
 | `-e` | Encoder: `lz4` ou `lz4hc` |
 | `-l` | Nível de compressão (1-12) |
 | `-p` | Nome do perfil |
 | `-D` | Threads decodificadoras FFmpeg (default: 0 = auto) |
 | `-E` | Threads codificadoras LZ4 (default: 1) |
+| `-w` | Habilita escrita de arquivo de saída |
 
 ### decode_lz4
 
 ```bash
-./decode_lz4 -i <input> -o <output> -p <profile> -D <threads>
+./decode_lz4 -i <input> [-o <output>] -p <profile> -D <threads> [-w]
 ```
 
 | Parâmetro | Descrição |
 |-----------|-----------|
 | `-i` | Arquivo .lz4 de entrada |
-| `-o` | Arquivo .yuv de saída |
+| `-o` | Arquivo .yuv de saída (default: output.yuv) |
 | `-p` | Nome do perfil |
 | `-D` | Número de threads decodificadoras (default: 1) |
+| `-w` | Habilita escrita de arquivo de saída |
 
 ---
 

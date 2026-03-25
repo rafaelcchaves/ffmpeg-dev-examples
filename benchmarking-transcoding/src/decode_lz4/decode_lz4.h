@@ -19,6 +19,7 @@ extern "C" {
 
 // Flag global de debug para métricas detalhadas
 extern bool g_debug_mode;
+extern bool g_enable_write;
 
 // Contexto de decodificacao
 typedef struct {

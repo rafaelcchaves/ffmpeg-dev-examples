@@ -25,6 +25,7 @@ void print_usage(const char *prog_name) {
     fprintf(stderr, "  -D <N>          Threads decodificadoras FFmpeg (default: 0 = auto)\n");
     fprintf(stderr, "  -E <N>          Threads codificadoras LZ4 (default: 1)\n");
     fprintf(stderr, "  -d              Modo debug: exibe metricas detalhadas\n");
+    fprintf(stderr, "  -w              Habilita escrita de arquivo de saida (default: desabilitado)\n");
     fprintf(stderr, "\nExemplos:\n");
     fprintf(stderr, "  %s -i video.mp4 -o video.enc -p baseline\n", prog_name);
     fprintf(stderr, "  %s -i video.mp4 -o video.enc -e lz4 -l 1 -p fast\n", prog_name);
@@ -42,10 +43,11 @@ int main(int argc, char **argv) {
     int num_encoder_threads = 1;
     int compression_level = 1;
     bool debug_mode = false;
+    bool enable_write = false;
     int opt;
 
     // Parse argumentos
-    while ((opt = getopt(argc, argv, "i:o:e:l:p:dD:E:")) != -1) {
+    while ((opt = getopt(argc, argv, "i:o:e:l:p:dD:E:w")) != -1) {
         switch (opt) {
             case 'i':
                 input_file = optarg;
@@ -71,6 +73,9 @@ int main(int argc, char **argv) {
             case 'd':
                 debug_mode = true;
                 break;
+            case 'w':
+                enable_write = true;
+                break;
             default:
                 print_usage(argv[0]);
                 return 1;
@@ -78,7 +83,7 @@ int main(int argc, char **argv) {
     }
 
     // Validação de argumentos obrigatórios
-    if (!input_file || !output_file || !profile) {
+    if (!input_file || !profile) {
         fprintf(stderr, "Erro: Argumentos obrigatorios faltando\n");
         print_usage(argv[0]);
         return 1;
@@ -118,6 +123,12 @@ int main(int argc, char **argv) {
                 encoder_name);
         return 1;
     }
+
+    // Default para arquivo de saida
+    if (!output_file) output_file = "output.lz4";
+
+    // Configura modo escrita
+    g_enable_write = enable_write;
 
     // Executa codificação
     return mt_encode_main(input_file, output_file, num_decoder_threads, num_encoder_threads,

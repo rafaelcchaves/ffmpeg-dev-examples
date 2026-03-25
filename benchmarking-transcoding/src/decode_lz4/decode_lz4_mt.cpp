@@ -11,12 +11,6 @@
 #include <unistd.h>
 #include <atomic>
 
-// Flag de compilação para habilitar/desabilitar escrita de arquivo de saída
-// Padrão: desabilitado (benchmark sem I/O de disco)
-#ifndef ENABLE_OUTPUT_WRITE
-#define ENABLE_OUTPUT_WRITE 0
-#endif
-
 // ============================================================================
 // Definição das variáveis globais
 // ============================================================================
@@ -251,16 +245,14 @@ void *mt_decoder_thread(void *arg) {
         }
 
         // 5. Escreve frame no arquivo
-#if ENABLE_OUTPUT_WRITE
-        size_t written = fwrite(ctx->decode_ctx.image_data[0], 1,
-                                fi->header.size_decompress, g_output_file);
-        if (written != (size_t)fi->header.size_decompress) {
-            fprintf(stderr, "[Decoder %d] Erro ao escrever frame %d\n",
-                    thread_id, fi->sequence_number);
+        if (g_enable_write) {
+            size_t written = fwrite(ctx->decode_ctx.image_data[0], 1,
+                                    fi->header.size_decompress, g_output_file);
+            if (written != (size_t)fi->header.size_decompress) {
+                fprintf(stderr, "[Decoder %d] Erro ao escrever frame %d\n",
+                        thread_id, fi->sequence_number);
+            }
         }
-#else
-        (void)thread_id;  // Avoid unused warning
-#endif
 
         // 6. Atualiza contador e acorda outras threads
         g_next_to_write++;
@@ -317,17 +309,16 @@ int mt_decode_main(int num_threads, const std::string &input_file,
         return -1;
     }
 
-#if ENABLE_OUTPUT_WRITE
-    g_output_file = fopen(output_file.c_str(), "wb");
-    if (!g_output_file) {
-        fprintf(stderr, "Erro: Nao foi possivel abrir arquivo de saida: %s\n", output_file.c_str());
-        fclose(g_input_file);
-        return -1;
+    if (g_enable_write) {
+        g_output_file = fopen(output_file.c_str(), "wb");
+        if (!g_output_file) {
+            fprintf(stderr, "Erro: Nao foi possivel abrir arquivo de saida: %s\n", output_file.c_str());
+            fclose(g_input_file);
+            return -1;
+        }
+    } else {
+        g_output_file = NULL;
     }
-#else
-    g_output_file = NULL;  // No file opened when writes disabled
-    (void)output_file;  // Avoid unused warning
-#endif
 
     // Lê primeiro header para obter dimensões
     ret = fread(&first_header, sizeof(FrameHeader), 1, g_input_file);
@@ -344,9 +335,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
     // Inicializa fila generica com frame_item_free como callback
     if (queue_init(&g_frame_queue, frame_item_free) < 0) {
         fclose(g_input_file);
-#if ENABLE_OUTPUT_WRITE
-        if (g_output_file) fclose(g_output_file);
-#endif
+        if (g_enable_write && g_output_file) fclose(g_output_file);
         return -1;
     }
 
@@ -354,9 +343,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
     if (mt_initialize_synchronization() < 0) {
         queue_destroy(&g_frame_queue);
         fclose(g_input_file);
-#if ENABLE_OUTPUT_WRITE
-        if (g_output_file) fclose(g_output_file);
-#endif
+        if (g_enable_write && g_output_file) fclose(g_output_file);
         return -1;
     }
 
@@ -365,9 +352,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
         mt_cleanup_synchronization();
         queue_destroy(&g_frame_queue);
         fclose(g_input_file);
-#if ENABLE_OUTPUT_WRITE
-        if (g_output_file) fclose(g_output_file);
-#endif
+        if (g_enable_write && g_output_file) fclose(g_output_file);
         return -1;
     }
 
@@ -377,9 +362,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
         mt_cleanup_synchronization();
         queue_destroy(&g_frame_queue);
         fclose(g_input_file);
-#if ENABLE_OUTPUT_WRITE
-        if (g_output_file) fclose(g_output_file);
-#endif
+        if (g_enable_write && g_output_file) fclose(g_output_file);
         return -1;
     }
 
@@ -396,9 +379,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
         mt_cleanup_synchronization();
         queue_destroy(&g_frame_queue);
         fclose(g_input_file);
-#if ENABLE_OUTPUT_WRITE
-        if (g_output_file) fclose(g_output_file);
-#endif
+        if (g_enable_write && g_output_file) fclose(g_output_file);
         return -1;
     }
 
@@ -421,9 +402,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
             mt_cleanup_synchronization();
             queue_destroy(&g_frame_queue);
             fclose(g_input_file);
-#if ENABLE_OUTPUT_WRITE
-            if (g_output_file) fclose(g_output_file);
-#endif
+            if (g_enable_write && g_output_file) fclose(g_output_file);
             return -1;
         }
     }
@@ -445,9 +424,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
         mt_cleanup_synchronization();
         queue_destroy(&g_frame_queue);
         fclose(g_input_file);
-#if ENABLE_OUTPUT_WRITE
-        if (g_output_file) fclose(g_output_file);
-#endif
+        if (g_enable_write && g_output_file) fclose(g_output_file);
         return -1;
     }
 
@@ -511,9 +488,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
     // Limpeza final
     // 1. Fecha arquivos
     fclose(g_input_file);
-#if ENABLE_OUTPUT_WRITE
-    if (g_output_file) fclose(g_output_file);
-#endif
+    if (g_enable_write && g_output_file) fclose(g_output_file);
 
     // 2. Limpeza de sincronização (ANTES de liberar contextos das threads)
     mt_cleanup_state();

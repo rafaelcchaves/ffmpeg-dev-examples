@@ -9,8 +9,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-// Definição da variável global de debug
+// Definição das variáveis globais
 bool g_debug_mode = false;
+bool g_enable_write = false;
 
 // Declaração da função multithread
 extern int mt_decode_main(int num_threads, const std::string &input_file,
@@ -29,6 +30,7 @@ void print_usage(const char *prog_name) {
     fprintf(stderr, "  -p <profile>    Nome do profile (ex: low_latency)\n");
     fprintf(stderr, "  -D <threads>    Numero de threads decodificadoras (default: 1 = single-thread)\n");
     fprintf(stderr, "  -d              Modo debug: exibe métricas detalhadas de I/O e decodificação\n");
+    fprintf(stderr, "  -w              Habilita escrita de arquivo de saida (default: desabilitado)\n");
     fprintf(stderr, "\nExemplos:\n");
     fprintf(stderr, "  %s -i input.enc -o output.yuv -p baseline\n", prog_name);
     fprintf(stderr, "  %s -i input.enc -o output.yuv -p low_latency -D 4\n", prog_name);
@@ -40,10 +42,11 @@ int main(int argc, char **argv) {
     std::string output_file;
     std::string profile;
     int num_decoder_threads = 1;
+    bool enable_write = false;
     int opt;
 
     // Parse argumentos
-    while ((opt = getopt(argc, argv, "i:o:p:D:d")) != -1) {
+    while ((opt = getopt(argc, argv, "i:o:p:D:dw")) != -1) {
         switch (opt) {
             case 'i':
                 input_file = optarg;
@@ -60,6 +63,9 @@ int main(int argc, char **argv) {
             case 'd':
                 g_debug_mode = true;
                 break;
+            case 'w':
+                enable_write = true;
+                break;
             default:
                 print_usage(argv[0]);
                 return 1;
@@ -67,7 +73,7 @@ int main(int argc, char **argv) {
     }
 
     // Valida argumentos obrigatórios
-    if (input_file.empty() || output_file.empty() || profile.empty()) {
+    if (input_file.empty() || profile.empty()) {
         print_usage(argv[0]);
         return 1;
     }
@@ -77,6 +83,12 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Erro: Numero de threads deve ser >= 1\n");
         return 1;
     }
+
+    // Default para arquivo de saida
+    if (output_file.empty()) output_file = "output.yuv";
+
+    // Configura modo escrita
+    g_enable_write = enable_write;
 
     // Escolhe modo de operação
     if (num_decoder_threads == 1) {

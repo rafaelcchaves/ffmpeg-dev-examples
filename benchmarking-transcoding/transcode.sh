@@ -42,13 +42,6 @@ fi
 
 mkdir -p "$output_dir"
 
-# Define WRITE_FLAG based on enable_write option
-if [ "$enable_write" -eq 1 ]; then
-    WRITE_FLAG="-DENABLE_OUTPUT_WRITE=1"
-else
-    WRITE_FLAG=""
-fi
-
 # Define thread profiles: name:decoder_threads:encoder_threads
 declare -a profiles=(
     "low_latency:1:1"
@@ -64,7 +57,6 @@ if [ "$encoder_name" = "lz4" ] || [ "$encoder_name" = "lz4hc" ]; then
     # LZ4/LZ4HC: always use multithread binary
     echo ">>> Building transcode_lz4_mt ..."
     gcc -O3 -Wall -Wno-unused-variable \
-        $WRITE_FLAG \
         src/transcode_lz4/transcode_lz4_main.c \
         src/transcode_lz4/transcode_lz4_mt.c \
         src/queue.c \
@@ -77,7 +69,7 @@ else
     # Other encoders (mjpeg, libsvtjpegxs, etc.) - use transcode.c
     echo ">>> Building transcode ..."
     gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode -I/usr/local/include -L/usr/local/lib \
-        -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 $WRITE_FLAG
+        -lavcodec -lavutil -lavformat -lm -llz4 -llzo2
     bin="transcode"
 fi
 
@@ -105,7 +97,9 @@ for profile_config in "${profiles[@]}"; do
     output_path="$output_dir/${profile_name}.$ext"
 
     echo ">>> Running $bin for $profile_name with -D $decoder_threads_config -E $encoder_threads_config ..."
-    "./$bin" -i "$in_file" -o "$output_path" -e "$encoder_name" -l "$lz_config" -p "$profile_name" -D "$decoder_threads_config" -E "$encoder_threads_config" >> "$results_file"
+    write_flag=""
+    if [ "$enable_write" -eq 1 ]; then write_flag="-w"; fi
+    "./$bin" -i "$in_file" -o "$output_path" -e "$encoder_name" -l "$lz_config" -p "$profile_name" -D "$decoder_threads_config" -E "$encoder_threads_config" $write_flag >> "$results_file"
 done
 
 rm -f "$bin"
