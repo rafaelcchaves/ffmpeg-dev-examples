@@ -153,6 +153,9 @@ gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
     -DUSE_LZ_COMPRESS -DLZ_CONFIG=1
 
 ./transcode -i video.mp4 -o output.lz4 -e lz4 -p low_latency
+
+# Com escrita habilitada
+./transcode -i video.mp4 -o output.lz4 -e lz4 -p low_latency -w
 ```
 
 #### LZ4HC (nível de compressão 9)
@@ -164,6 +167,9 @@ gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
     -DUSE_LZ_COMPRESS -DLZ_CONFIG=9
 
 ./transcode -i video.mp4 -o output.lz4 -e lz4hc -p low_latency
+
+# Com escrita habilitada
+./transcode -i video.mp4 -o output.lz4 -e lz4hc -p low_latency -w
 ```
 
 #### MJPEG (ou outros encoders FFmpeg)
@@ -174,6 +180,9 @@ gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
     -lavcodec -lavutil -lavformat -lm -llz4 -llzo2
 
 ./transcode -i video.mp4 -o output.mjpeg -e mjpeg -p balanced -D 8 -E 8
+
+# Com escrita habilitada
+./transcode -i video.mp4 -o output.mjpeg -e mjpeg -p balanced -D 8 -E 8 -w
 ```
 
 **Parâmetros do binário `transcode`:**
@@ -186,6 +195,7 @@ gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
 | `-p` | Nome do perfil |
 | `-D` | Threads decodificadoras (default: 0 = auto) |
 | `-E` | Threads codificadoras (default: 0 = auto) |
+| `-w` | Habilita escrita do arquivo de saída (default: desabilitado) |
 
 ### Transcodificação — LZ4/LZ4HC Multithread (`src/transcode_lz4/`)
 
@@ -200,6 +210,9 @@ gcc -O3 -Wall -Wno-unused-variable \
     -lavcodec -lavutil -lavformat -lm -llz4 -lpthread
 
 ./transcode_mt -i video.mp4 -o output.lz4 -e lz4 -l 1 -p balanced -D 8 -E 8
+
+# Com escrita habilitada
+./transcode_mt -i video.mp4 -o output.lz4 -e lz4 -l 1 -p balanced -D 8 -E 8 -w
 ```
 
 **Parâmetros do binário `transcode_mt`:**
@@ -213,6 +226,7 @@ gcc -O3 -Wall -Wno-unused-variable \
 | `-p` | Nome do perfil |
 | `-D` | Threads decodificadoras FFmpeg (default: 0 = auto) |
 | `-E` | Threads codificadoras LZ4 (default: 1) |
+| `-w` | Habilita escrita do arquivo de saída (default: desabilitado) |
 
 ### Decodificação — FFmpeg (`src/decode.cpp`)
 
@@ -223,6 +237,9 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
     -lavcodec -lavutil -lavformat -lm
 
 ./decode -i video.mp4 -o output.yuv -p balanced -D 4
+
+# Com escrita habilitada
+./decode -i video.mp4 -o output.yuv -p balanced -D 4 -w
 ```
 
 **Parâmetros do binário `decode`:**
@@ -233,6 +250,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 | `-o` | Arquivo YUV de saída |
 | `-p` | Nome do perfil |
 | `-D` | Threads decodificadoras FFmpeg (default: 0 = auto) |
+| `-w` | Habilita escrita do arquivo de saída (default: desabilitado) |
 
 ### Decodificação — LZ4 Multithread (`src/decode_lz4/`)
 
@@ -246,6 +264,9 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
     -lavutil -lm -llz4 -lpthread
 
 ./decode_lz4 -i video.lz4 -o output.yuv -p balanced -D 8
+
+# Com escrita habilitada
+./decode_lz4 -i video.lz4 -o output.yuv -p balanced -D 8 -w
 ```
 
 **Parâmetros do binário `decode_lz4`:**
@@ -256,25 +277,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 | `-o` | Arquivo YUV de saída |
 | `-p` | Nome do perfil |
 | `-D` | Threads decodificadoras (default: 1) |
-
-### Habilitando Escrita de Arquivos
-
-Todos os binários suportam escrita de arquivos de saída via macro de compilação. Adicione `-DENABLE_OUTPUT_WRITE=1` na linha de compilação:
-
-```bash
-# Exemplo: transcode_mt com escrita habilitada
-gcc -O3 -Wall -Wno-unused-variable \
-    -DENABLE_OUTPUT_WRITE=1 \
-    src/transcode_lz4/transcode_lz4_main.c \
-    src/transcode_lz4/transcode_lz4_mt.c \
-    src/queue.c \
-    src/cpu_stats.cpp \
-    -o transcode_mt \
-    -I/usr/local/include -L/usr/local/lib \
-    -lavcodec -lavutil -lavformat -lm -llz4 -lpthread
-```
-
-Sem essa flag, os binários executam o benchmark em modo puro (sem I/O de disco), gerando arquivos de saída com tamanho zero.
+| `-w` | Habilita escrita do arquivo de saída (default: desabilitado) |
 
 ### Macros de Compilação
 
@@ -282,7 +285,6 @@ Sem essa flag, os binários executam o benchmark em modo puro (sem I/O de disco)
 |-------|-------|-----------|
 | `USE_LZ_COMPRESS` | — | Habilita compressão LZ4 no single-thread |
 | `LZ_CONFIG` | `1`–`12` | Nível de aceleração (LZ4) ou compressão (LZ4HC) |
-| `ENABLE_OUTPUT_WRITE` | `0`/`1` | Habilita escrita de arquivos de saída |
 
 ### Opções de CLI para Threads
 
