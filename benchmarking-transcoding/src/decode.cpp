@@ -13,9 +13,6 @@ extern "C" {
 #include "cpu_stats.h"
 
 #define INBUF_SIZE 10000
-#ifndef THREADS_IN
-#define THREADS_IN 0
-#endif
 
 // Flag de compilação para habilitar/desabilitar escrita de arquivo de saída
 // Padrão: desabilitado (benchmark sem I/O de disco)
@@ -24,6 +21,7 @@ extern "C" {
 #endif
 
 int frames;
+int num_decoder_threads = 0;
 const char *profile_name = NULL;
 
 static void decode(AVCodecContext *dec_ctx, AVPacket *inpkt, AVFrame *frame, FILE *outfile)
@@ -50,7 +48,7 @@ static void decode(AVCodecContext *dec_ctx, AVPacket *inpkt, AVFrame *frame, FIL
     frames++;
 
         if(inpkt)
-        printf("%s,%d,0,decoding,%ld\n", profile_name, THREADS_IN, av_gettime() - frame->pkt_dts);
+        printf("%s,%d,0,decoding,%ld\n", profile_name, num_decoder_threads, av_gettime() - frame->pkt_dts);
 
         av_frame_unref(frame);
     }
@@ -68,7 +66,7 @@ int main(int argc, char** argv){
     AVFrame *frame = NULL;
 
     int opt;
-    while ((opt = getopt(argc, argv, "i:o:p:")) != -1) {
+    while ((opt = getopt(argc, argv, "i:o:p:D:")) != -1) {
         switch (opt) {
             case 'i':
                 infilename = optarg;
@@ -79,19 +77,24 @@ int main(int argc, char** argv){
             case 'p':
                 profile_name = optarg;
                 break;
+            case 'D':
+                num_decoder_threads = atoi(optarg);
+                break;
             default:
-                fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -p <profile>\n", argv[0]);
+                fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -p <profile> [-D <decoder_threads>]\n", argv[0]);
                 fprintf(stderr, "  -i  Input video file\n");
                 fprintf(stderr, "  -o  Output YUV file\n");
                 fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
+                fprintf(stderr, "  -D  Decoder threads (default: 0 = auto)\n");
                 exit(1);
         }
     }
     if (infilename == NULL || outfilename == NULL || profile_name == NULL) {
-        fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -p <profile>\n", argv[0]);
+        fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -p <profile> [-D <decoder_threads>]\n", argv[0]);
         fprintf(stderr, "  -i  Input video file\n");
         fprintf(stderr, "  -o  Output YUV file\n");
         fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
+        fprintf(stderr, "  -D  Decoder threads (default: 0 = auto)\n");
         exit(1);
     }
 #if ENABLE_OUTPUT_WRITE
@@ -145,7 +148,7 @@ int main(int argc, char** argv){
         fprintf(stderr, "Failed to copy codec parameters to decoder context\n");
         exit(1);
     }
-    incodec_ctx->thread_count = THREADS_IN;
+    incodec_ctx->thread_count = num_decoder_threads;
     if (avcodec_open2(incodec_ctx, incodec, NULL) < 0) {
         fprintf(stderr, "Could not open codec\n");
         exit(1);
@@ -168,9 +171,9 @@ int main(int argc, char** argv){
     cpu_stats_read(&cpu_end);
     double cpu_usage = cpu_stats_calculate_usage(&cpu_start, &cpu_end);
 
-    printf("%s,%d,0,total,%ld\n", profile_name, THREADS_IN, av_gettime() - start_time);
-    printf("%s,%d,0,fps,%lf\n", profile_name, THREADS_IN, (frames*1e6)/(av_gettime() - start_time));
-    printf("%s,%d,0,cpu,%lf\n", profile_name, THREADS_IN, cpu_usage);
+    printf("%s,%d,0,total,%ld\n", profile_name, num_decoder_threads, av_gettime() - start_time);
+    printf("%s,%d,0,fps,%lf\n", profile_name, num_decoder_threads, (frames*1e6)/(av_gettime() - start_time));
+    printf("%s,%d,0,cpu,%lf\n", profile_name, num_decoder_threads, cpu_usage);
 
     avformat_close_input(&fmt_ctx);
     avcodec_free_context(&incodec_ctx);

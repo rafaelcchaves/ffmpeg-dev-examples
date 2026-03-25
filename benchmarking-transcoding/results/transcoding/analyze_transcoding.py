@@ -144,6 +144,10 @@ def analyze_transcoding_files(file_paths):
             if not fps_data.empty:
                 print(f"\n{PROFILE_DISPLAY_NAMES[profile]}:")
                 print(f"  Average FPS: {fps_data.mean():.2f}")
+            thread_data = profile_df[profile_df['type'] == 'total']
+            if not thread_data.empty and 'decoder_threads' in thread_data.columns:
+                print(f"  Decoder Threads: {thread_data['decoder_threads'].iloc[0]}")
+                print(f"  Encoder Threads: {thread_data['encoder_threads'].iloc[0]}")
 
     # --- Plotting ---
     plot_frame_time_boxplot_by_profile(combined_df)

@@ -27,23 +27,23 @@ void print_usage(const char *prog_name) {
     fprintf(stderr, "  -i <arquivo>    Arquivo de entrada LZ4 compactado\n");
     fprintf(stderr, "  -o <arquivo>    Arquivo de saida YUV\n");
     fprintf(stderr, "  -p <profile>    Nome do profile (ex: low_latency)\n");
-    fprintf(stderr, "  -t <threads>    Numero de threads decodificadoras (default: 1 = single-thread)\n");
+    fprintf(stderr, "  -D <threads>    Numero de threads decodificadoras (default: 1 = single-thread)\n");
     fprintf(stderr, "  -d              Modo debug: exibe métricas detalhadas de I/O e decodificação\n");
     fprintf(stderr, "\nExemplos:\n");
     fprintf(stderr, "  %s -i input.enc -o output.yuv -p baseline\n", prog_name);
-    fprintf(stderr, "  %s -i input.enc -o output.yuv -p low_latency -t 4\n", prog_name);
-    fprintf(stderr, "  %s -i input.enc -o output.yuv -p low_latency -t 4 -d\n", prog_name);
+    fprintf(stderr, "  %s -i input.enc -o output.yuv -p low_latency -D 4\n", prog_name);
+    fprintf(stderr, "  %s -i input.enc -o output.yuv -p low_latency -D 4 -d\n", prog_name);
 }
 
 int main(int argc, char **argv) {
     std::string input_file;
     std::string output_file;
     std::string profile;
-    int num_threads = 1;
+    int num_decoder_threads = 1;
     int opt;
 
     // Parse argumentos
-    while ((opt = getopt(argc, argv, "i:o:p:t:d")) != -1) {
+    while ((opt = getopt(argc, argv, "i:o:p:D:d")) != -1) {
         switch (opt) {
             case 'i':
                 input_file = optarg;
@@ -54,8 +54,8 @@ int main(int argc, char **argv) {
             case 'p':
                 profile = optarg;
                 break;
-            case 't':
-                num_threads = atoi(optarg);
+            case 'D':
+                num_decoder_threads = atoi(optarg);
                 break;
             case 'd':
                 g_debug_mode = true;
@@ -73,18 +73,18 @@ int main(int argc, char **argv) {
     }
 
     // Valida número de threads
-    if (num_threads < 1) {
+    if (num_decoder_threads < 1) {
         fprintf(stderr, "Erro: Numero de threads deve ser >= 1\n");
         return 1;
     }
 
     // Escolhe modo de operação
-    if (num_threads == 1) {
+    if (num_decoder_threads == 1) {
         // Modo single-thread (implementação original)
         return st_decode_main(input_file, output_file, profile);
     } else {
         // Modo multi-thread
-        return mt_decode_main(num_threads, input_file, output_file, profile);
+        return mt_decode_main(num_decoder_threads, input_file, output_file, profile);
     }
 
     return 0;
@@ -172,7 +172,7 @@ int st_decode_main(const std::string &input_file,
         }
 
         // Imprime estatísticas
-        stats_print_frame(profile.c_str(), 0, decode_time);
+        stats_print_frame(profile.c_str(), 1, 0, decode_time);
 
         frames++;
     }
@@ -182,8 +182,8 @@ int st_decode_main(const std::string &input_file,
     cpu_stats_read(&cpu_end);
     double cpu_usage = cpu_stats_calculate_usage(&cpu_start, &cpu_end);
 
-    stats_print_summary(profile.c_str(), 0, frames, total_time);
-    stats_print_cpu(profile.c_str(), 0, cpu_usage);
+    stats_print_summary(profile.c_str(), 1, 0, frames, total_time);
+    stats_print_cpu(profile.c_str(), 1, 0, cpu_usage);
 
     // Cleanup
     frame_reader_close(infile);

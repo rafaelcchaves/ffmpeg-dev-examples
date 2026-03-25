@@ -27,12 +27,6 @@ gcc transcode.c -o transcode -lavformat -lavcodec -lavutil -lm
 To execute tests: 
  */
 #define INBUF_SIZE 10000
-#ifndef THREADS_IN
-#define THREADS_IN 0
-#endif
-#ifndef THREADS_OUT
-#define THREADS_OUT 0
-#endif
 #ifndef LZ_CONFIG
 #define LZ_CONFIG 1
 #endif
@@ -46,6 +40,8 @@ To execute tests:
 int pts;
 int dts;
 int frames;
+int num_decoder_threads = 0;
+int num_encoder_threads = 0;
 int maxCapacity;
 char *compressedFrame = NULL;
 const char *encoder_name = NULL;
@@ -99,7 +95,7 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
                 exit(1);
             }
 	    if(inpkt)
-            	printf("%s,%d,%d,transcoding,%ld\n", profile_name, THREADS_IN, THREADS_OUT, av_gettime() - outpkt->dts);
+            	printf("%s,%d,%d,transcoding,%ld\n", profile_name, num_decoder_threads, num_encoder_threads, av_gettime() - outpkt->dts);
 #if ENABLE_OUTPUT_WRITE
             fwrite(outpkt->data, 1, outpkt->size, outfile);
 #else
@@ -120,7 +116,7 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
             compressedSize = LZ4_compress_fast((const char*)image_data[0], compressedFrame, image_bufsize, maxCapacity, LZ_CONFIG);
         
         if(inpkt)
-            printf("%s,%d,%d,transcoding,%ld,%d\n", profile_name, THREADS_IN, THREADS_OUT, av_gettime() - frame->pkt_dts, LZ_CONFIG);
+            printf("%s,%d,%d,transcoding,%ld,%d\n", profile_name, num_decoder_threads, num_encoder_threads, av_gettime() - frame->pkt_dts, LZ_CONFIG);
         if(compressedSize == 0){
             fprintf(stderr, "Error: Compress failed\n");
             exit(1);
@@ -178,7 +174,7 @@ int main(int argc, char** argv){
     AVPacket *outpkt;
     int opt;
     
-    while ((opt = getopt(argc, argv, "i:o:e:p:")) != -1) {
+    while ((opt = getopt(argc, argv, "i:o:e:p:D:E:")) != -1) {
         switch (opt) {
             case 'i':
                 infilename = optarg;
@@ -192,21 +188,31 @@ int main(int argc, char** argv){
             case 'p':
                 profile_name = optarg;
                 break;
+            case 'D':
+                num_decoder_threads = atoi(optarg);
+                break;
+            case 'E':
+                num_encoder_threads = atoi(optarg);
+                break;
             default:
-                fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -e <encoder> -p <profile>\n", argv[0]);
+                fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -e <encoder> -p <profile> [-D <decoder_threads>] [-E <encoder_threads>]\n", argv[0]);
                 fprintf(stderr, "  -i  Input video file\n");
                 fprintf(stderr, "  -o  Output file (encoded video or compressed data)\n");
                 fprintf(stderr, "  -e  Encoder name (e.g., mjpeg, libsvtjpegxs, lz4, lz4hc)\n");
                 fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
+                fprintf(stderr, "  -D  Decoder threads (default: 0 = auto)\n");
+                fprintf(stderr, "  -E  Encoder threads (default: 0 = auto)\n");
                 exit(1);
         }
     }
     if (infilename == NULL || outfilename == NULL || encoder_name == NULL || profile_name == NULL) {
-        fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -e <encoder> -p <profile>\n", argv[0]);
+        fprintf(stderr, "Usage: %s -i <input-file> -o <output-file> -e <encoder> -p <profile> [-D <decoder_threads>] [-E <encoder_threads>]\n", argv[0]);
         fprintf(stderr, "  -i  Input video file\n");
         fprintf(stderr, "  -o  Output file (encoded video or compressed data)\n");
         fprintf(stderr, "  -e  Encoder name (e.g., mjpeg, libsvtjpegxs, lz4, lz4hc)\n");
         fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
+        fprintf(stderr, "  -D  Decoder threads (default: 0 = auto)\n");
+        fprintf(stderr, "  -E  Encoder threads (default: 0 = auto)\n");
         exit(1);
     }
 #if ENABLE_OUTPUT_WRITE
@@ -273,7 +279,7 @@ int main(int argc, char** argv){
     }
     incodec_ctx->time_base = (AVRational){1, fps}; // Use auto-detected fps
     incodec_ctx->framerate = (AVRational){fps, 1}; // Use auto-detected fps
-    incodec_ctx->thread_count = THREADS_IN;
+    incodec_ctx->thread_count = num_decoder_threads;
     if (avcodec_open2(incodec_ctx, incodec, NULL) < 0) {
         fprintf(stderr, "Could not open codec\n");
         exit(1);
@@ -309,7 +315,7 @@ int main(int argc, char** argv){
     }
     outcodec_ctx->width = width; // Use auto-detected width
     outcodec_ctx->height = height; // Use auto-detected height
-    outcodec_ctx->thread_count = THREADS_OUT;
+    outcodec_ctx->thread_count = num_encoder_threads;
     ret = avcodec_open2(outcodec_ctx, outcodec, NULL);
     if (ret < 0) {
         fprintf(stderr, "Could not open codec: %s\n", av_err2str(ret));
@@ -341,11 +347,11 @@ int main(int argc, char** argv){
     transcode(incodec_ctx, outcodec_ctx, NULL, frame, outpkt, output);
 
 #ifndef USE_LZ_COMPRESS
-    printf("%s,%d,%d,total,%ld\n", profile_name, THREADS_IN, THREADS_OUT, av_gettime() - start_time);
-    printf("%s,%d,%d,fps,%lf\n", profile_name, THREADS_IN, THREADS_OUT, (frames*1000000.0)/(av_gettime() - start_time));
+    printf("%s,%d,%d,total,%ld\n", profile_name, num_decoder_threads, num_encoder_threads, av_gettime() - start_time);
+    printf("%s,%d,%d,fps,%lf\n", profile_name, num_decoder_threads, num_encoder_threads, (frames*1000000.0)/(av_gettime() - start_time));
 #else
-    printf("%s,%d,%d,total,%ld,%d\n", profile_name, THREADS_IN, THREADS_OUT, av_gettime() - start_time, LZ_CONFIG);
-    printf("%s,%d,%d,fps,%lf,%d\n", profile_name, THREADS_IN, THREADS_OUT, (frames*1000000.0)/(av_gettime() - start_time), LZ_CONFIG);
+    printf("%s,%d,%d,total,%ld,%d\n", profile_name, num_decoder_threads, num_encoder_threads, av_gettime() - start_time, LZ_CONFIG);
+    printf("%s,%d,%d,fps,%lf,%d\n", profile_name, num_decoder_threads, num_encoder_threads, (frames*1000000.0)/(av_gettime() - start_time), LZ_CONFIG);
 #endif
     
     avformat_close_input(&fmt_ctx);

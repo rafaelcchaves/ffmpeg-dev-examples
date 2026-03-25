@@ -269,7 +269,7 @@ void *mt_decoder_thread(void *arg) {
 
         // 7. Imprime estatísticas (apenas se não estiver em modo debug)
         if (!g_debug_mode) {
-            stats_print_frame(g_profile_name.c_str(), g_num_decoder_threads, decode_time);
+            stats_print_frame(g_profile_name.c_str(), g_num_decoder_threads, 0, decode_time);
         }
 
         // 8. Libera FrameItem
@@ -504,8 +504,8 @@ int mt_decode_main(int num_threads, const std::string &input_file,
         }
     } else {
         // Modo normal: usa formato padrão
-        stats_print_summary(profile.c_str(), num_threads, total_frames, total_time);
-        stats_print_cpu(profile.c_str(), num_threads, cpu_usage);
+        stats_print_summary(profile.c_str(), num_threads, 0, total_frames, total_time);
+        stats_print_cpu(profile.c_str(), num_threads, 0, cpu_usage);
     }
 
     // Limpeza final

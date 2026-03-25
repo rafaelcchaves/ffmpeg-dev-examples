@@ -175,6 +175,9 @@ def analyze_decoding(file_paths):
                 print(f"  Average FPS: {fps_data.mean():.2f}")
             if not cpu_data.empty:
                 print(f"  Average CPU Usage: {cpu_data.mean():.1f}%")
+            thread_data = profile_df[profile_df['type'] == 'total']
+            if not thread_data.empty and 'decoder_threads' in thread_data.columns:
+                print(f"  Decoder Threads: {thread_data['decoder_threads'].iloc[0]}")
 
     # --- Plotting ---
     plot_frame_time_boxplot_by_profile(combined_df)

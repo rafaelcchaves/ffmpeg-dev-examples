@@ -11,6 +11,7 @@ Este projeto implementa um sistema de benchmarking para transcodificação e dec
 - **Arquitetura Multithread**: Producer-consumer com fila genérica (Queue)
 - **Flag de Escrita**: Permite benchmarks sem I/O de disco (padrão)
 - **Perfis de Threads**: low_latency, balanced, high_throughput
+- **Threads via CLI**: Configuração de threads em tempo de execução (`-D` decoder, `-E` encoder)
 
 ### Estrutura do Projeto
 
@@ -149,7 +150,6 @@ Os scripts `transcode.sh` e `decode.sh` compilam automaticamente:
 ```bash
 # Sem escrita (padrão - benchmark puro)
 gcc -O3 -Wall -Wno-unused-variable \
-    -DTHREADS_IN=8 -DTHREADS_OUT=8 \
     src/transcode_lz4/transcode_lz4_main.c \
     src/transcode_lz4/transcode_lz4_mt.c \
     src/queue.c \
@@ -160,7 +160,7 @@ gcc -O3 -Wall -Wno-unused-variable \
 
 # Com escrita habilitada
 gcc -O3 -Wall -Wno-unused-variable \
-    -DTHREADS_IN=8 -DTHREADS_OUT=8 -DENABLE_OUTPUT_WRITE=1 \
+    -DENABLE_OUTPUT_WRITE=1 \
     src/transcode_lz4/transcode_lz4_main.c \
     src/transcode_lz4/transcode_lz4_mt.c \
     src/queue.c \
@@ -170,26 +170,13 @@ gcc -O3 -Wall -Wno-unused-variable \
     -lavcodec -lavutil -lavformat -lm -llz4 -lpthread
 ```
 
-#### Transcodificação - Single-thread (transcode.c)
+#### Transcodificação - Outros Encoders (transcode.c)
 
 ```bash
-# LZ4
-gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
-    -I/usr/local/include -L/usr/local/lib \
-    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
-    -DTHREADS_IN=1 -DTHREADS_OUT=1 -DUSE_LZ_COMPRESS -DLZ_CONFIG=1
-
-# LZ4HC (nível de compressão 9)
-gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
-    -I/usr/local/include -L/usr/local/lib \
-    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
-    -DTHREADS_IN=1 -DTHREADS_OUT=1 -DUSE_LZ_COMPRESS -DLZ_CONFIG=9
-
 # MJPEG
 gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
     -I/usr/local/include -L/usr/local/lib \
-    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
-    -DTHREADS_IN=8 -DTHREADS_OUT=8
+    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2
 ```
 
 #### Decodificação - LZ4 Multithread
@@ -236,11 +223,16 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 
 | Macro | Default | Descrição |
 |-------|---------|-----------|
-| `THREADS_IN` | 0/1 | Threads de decodificação |
-| `THREADS_OUT` | 0/1 | Threads de codificação |
 | `USE_LZ_COMPRESS` | - | Habilita compressão LZ4 |
 | `LZ_CONFIG` | 1 | Nível de aceleração (LZ4) ou compressão (LZ4HC) |
 | `ENABLE_OUTPUT_WRITE` | 0 | Habilita escrita de arquivos de saída |
+
+### Opções de CLI para Threads
+
+| Opção | Default | Descrição |
+|-------|---------|-----------|
+| `-D <N>` | 0 (auto) | Threads decodificadoras FFmpeg |
+| `-E <N>` | 1 | Threads codificadoras LZ4 |
 
 ---
 
@@ -303,8 +295,8 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 
 ### Perfis de Threads
 
-| Perfil | Threads IN | Threads OUT | Uso |
-|--------|------------|-------------|-----|
+| Perfil | Decoder Threads | Encoder Threads | Uso |
+|--------|-----------------|-----------------|-----|
 | `low_latency` | 1 | 1 | Menor latência |
 | `balanced` | 8 | 8 | Equilíbrio |
 | `high_throughput` | 16 | 16 | Máximo throughput |
@@ -316,7 +308,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 ### transcode_lz4_mt
 
 ```bash
-./transcode_mt -i <input> -o <output> -e <encoder> -l <level> -p <profile>
+./transcode_mt -i <input> -o <output> -e <encoder> -l <level> -p <profile> -D <decoder_threads> -E <encoder_threads>
 ```
 
 | Parâmetro | Descrição |
@@ -326,11 +318,13 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 | `-e` | Encoder: `lz4` ou `lz4hc` |
 | `-l` | Nível de compressão (1-12) |
 | `-p` | Nome do perfil |
+| `-D` | Threads decodificadoras FFmpeg (default: 0 = auto) |
+| `-E` | Threads codificadoras LZ4 (default: 1) |
 
 ### decode_lz4
 
 ```bash
-./decode_lz4 -i <input> -o <output> -p <profile> -t <threads>
+./decode_lz4 -i <input> -o <output> -p <profile> -D <threads>
 ```
 
 | Parâmetro | Descrição |
@@ -338,7 +332,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 | `-i` | Arquivo .lz4 de entrada |
 | `-o` | Arquivo .yuv de saída |
 | `-p` | Nome do perfil |
-| `-t` | Número de threads |
+| `-D` | Número de threads decodificadoras (default: 1) |
 
 ---
 
@@ -363,7 +357,7 @@ pip install pandas matplotlib seaborn
 ### Formato do CSV
 
 ```csv
-profile,threads_in,threads_out,type,time[,compression_level]
+profile,decoder_threads,encoder_threads,type,time[,compression_level]
 low_latency,1,1,transcoding,1234,1
 low_latency,1,1,total,567890,1
 low_latency,1,1,fps,60.5,1

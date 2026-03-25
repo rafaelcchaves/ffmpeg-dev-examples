@@ -7,10 +7,6 @@ extern "C" {
 #include <stdlib.h>
 #include <unistd.h>
 
-#ifndef THREADS_IN
-#define THREADS_IN 0
-#endif
-
 int main(int argc, char** argv) {
     const char *infilename = NULL;
     const char *outfilename = NULL;
@@ -121,14 +117,14 @@ int main(int argc, char** argv) {
         }
 
         // Imprime estatisticas
-        stats_print_frame(profile, THREADS_IN, decode_time);
+        stats_print_frame(profile, 0, 0, decode_time);
 
         frames++;
     }
 
     // Imprime resumo final
     int64_t total_time = av_gettime() - start_time;
-    stats_print_summary(profile, THREADS_IN, frames, total_time);
+    stats_print_summary(profile, 0, 0, frames, total_time);
 
     // Cleanup
     frame_reader_close(infile);

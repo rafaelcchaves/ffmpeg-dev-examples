@@ -58,7 +58,7 @@ typedef struct {
  */
 typedef struct {
     const char *input_filename;   /**< Arquivo de entrada (vídeo) */
-    int decode_thread_count;      /**< Número de threads para decodificador FFmpeg */
+    int decoder_thread_count;     /**< Número de threads para decodificador FFmpeg */
     int encoder_thread_count;     /**< Número de threads codificadoras */
 } ProducerArgs;
 
@@ -88,7 +88,7 @@ extern pthread_cond_t g_active_threads_cond;
 extern FILE *g_output_file;
 
 /** Configuração */
-extern int g_num_decode_threads;
+extern int g_num_decoder_threads;
 extern int g_num_encoder_threads;
 extern int g_encoder_type;
 extern int g_compression_level;
@@ -180,7 +180,7 @@ void *mt_encoder_thread(void *arg);
  *
  * @param input_file Arquivo de entrada (vídeo)
  * @param output_file Arquivo de saída (LZ4 compactado)
- * @param num_decode_threads Número de threads para decodificador FFmpeg
+ * @param num_decoder_threads Número de threads para decodificador FFmpeg
  * @param num_encoder_threads Número de threads codificadoras
  * @param encoder_type ENCODER_TYPE_LZ4 ou ENCODER_TYPE_LZ4HC
  * @param compression_level Nível de compressão ou aceleração
@@ -189,7 +189,7 @@ void *mt_encoder_thread(void *arg);
  * @return 0 em sucesso, valor negativo em erro
  */
 int mt_encode_main(const char *input_file, const char *output_file,
-                   int num_decode_threads, int num_encoder_threads,
+                   int num_decoder_threads, int num_encoder_threads,
                    int encoder_type, int compression_level,
                    const char *profile, bool debug_mode);
 

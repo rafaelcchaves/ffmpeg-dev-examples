@@ -82,7 +82,7 @@ Decodifica vídeos em formatos padrão usando FFmpeg/libav.
 **Características:**
 - Usa `avcodec_send_packet()` / `avcodec_receive_frame()`
 - Mede latência por frame (tempo desde `pkt_dts`)
-- Suporte a threading via `thread_count`
+- Threads configuradas via `-D` (default: 0 = auto)
 
 ### 2. Modo LZ4 (`src/decode_lz4/*`)
 
@@ -93,7 +93,7 @@ Decodifica arquivos comprimidos com LZ4 usando arquitetura multithread.
 ```
 ┌──────────────┐     ┌─────────────────┐     ┌──────────────┐
 │   Produtor   │ ──► │ Buffer Compart. │ ──► │ Consumidores │
-│ (Leitura)    │     │  (Semaforos)    │     │ (Decodific.) │
+│ (Leitura)    │     │  (Queue)        │     │ (Decodific.) │
 └──────────────┘     └─────────────────┘     └──────────────┘
        │                                            │
        ▼                                            ▼
@@ -119,16 +119,16 @@ Decodifica arquivos comprimidos com LZ4 usando arquitetura multithread.
 
 ### Modo FFmpeg
 
-| Perfil | Threads | Uso |
-|--------|---------|-----|
+| Perfil | Decoder Threads | Uso |
+|--------|-----------------|-----|
 | `low_latency` | 1 | Menor latência |
-| `balanced` | 8 | Equilíbrio |
-| `high_throughput` | 16 | Máximo throughput |
+| `balanced` | 4 | Equilíbrio |
+| `high_throughput` | 8 | Máximo throughput |
 
 ### Modo LZ4
 
-| Perfil | Threads | Uso |
-|--------|---------|-----|
+| Perfil | Decoder Threads | Uso |
+|--------|-----------------|-----|
 | `low_latency` | 1 | Menor latência |
 | `balanced` | 4 | Equilíbrio |
 | `high_throughput` | 8 | Máximo throughput |
@@ -142,7 +142,7 @@ Decodifica arquivos comprimidos com LZ4 usando arquitetura multithread.
 ### Modo FFmpeg
 
 ```csv
-profile,threads_in,threads_out,type,time
+profile,decoder_threads,encoder_threads,type,time
 low_latency,1,0,decoding,1234
 low_latency,1,0,total,567890
 low_latency,1,0,fps,60.5
@@ -151,7 +151,7 @@ low_latency,1,0,fps,60.5
 ### Modo LZ4
 
 ```csv
-profile,threads_in,threads_out,type,time
+profile,decoder_threads,encoder_threads,type,time
 low_latency,1,0,decoding,1234
 low_latency,1,0,total,567890
 low_latency,1,0,fps,60.5
@@ -162,8 +162,8 @@ low_latency,1,0,fps,60.5
 | Coluna | Descrição |
 |--------|-----------|
 | `profile` | Nome do perfil (`low_latency`, `balanced`, `high_throughput`) |
-| `threads_in` | Número de threads de decodificação |
-| `threads_out` | Sempre 0 (decodificação não tem saída codificada) |
+| `decoder_threads` | Número de threads de decodificação |
+| `encoder_threads` | Sempre 0 (decodificação não tem saída codificada) |
 | `type` | Tipo de métrica (`decoding`, `total`, `fps`) |
 | `time` | Tempo em microssegundos ou FPS |
 
@@ -186,6 +186,7 @@ python3 results/decoding/analyze_decoding.py resultado1.csv resultado2.csv ...
 
 1. **Estatísticas Resumidas**
    - FPS médio por perfil
+   - Contagem de threads por perfil
 
 2. **Gráfico de FPS por Perfil**
    - Bar chart comparando throughput
@@ -211,8 +212,8 @@ pip install pandas matplotlib seaborn
 ```bash
 # Passo 1: Transcodificar vídeo para LZ4
 ./transcode.sh \
-  -i dataset/videos/foreman.mp4 \
-  -r results/transcoding/h264-lz4.csv \
+  -i dataset/ssim95_avc.mp4 \
+  -r results/transcoding/avc-lz4.csv \
   -e lz4 \
   -o output/
 
@@ -227,27 +228,6 @@ pip install pandas matplotlib seaborn
 python3 results/decoding/analyze_decoding.py results/decoding/lz4-decode.csv
 ```
 
-### 2. Comparar Codecs de Vídeo
-
-```bash
-# Decodificar H.264
-./decode.sh \
-  -i dataset/videos/foreman_h264.mp4 \
-  -r results/decoding/h264.csv \
-  -o output/
-
-# Decodificar HEVC
-./decode.sh \
-  -i dataset/videos/foreman_hevc.mp4 \
-  -r results/decoding/hevc.csv \
-  -o output/
-
-# Analisar ambos
-python3 results/decoding/analyze_decoding.py \
-  results/decoding/h264.csv \
-  results/decoding/hevc.csv
-```
-
 ---
 
 ## Exemplos Práticos
@@ -256,8 +236,8 @@ python3 results/decoding/analyze_decoding.py \
 
 ```bash
 ./decode.sh \
-  -i dataset/videos/foreman.mp4 \
-  -r results/decoding/foreman.csv \
+  -i dataset/ssim95_avc.mp4 \
+  -r results/decoding/avc.csv \
   -o output/yuv/
 ```
 
@@ -270,25 +250,6 @@ python3 results/decoding/analyze_decoding.py \
   -l lz4 \
   -p high_throughput \
   -o output/yuv/
-```
-
-### Exemplo 3: Decodificação LZ4HC
-
-```bash
-./decode.sh \
-  -i output/balanced.lz4hc \
-  -r results/decoding/lz4hc.csv \
-  -l lz4hc \
-  -o output/yuv/
-```
-
-### Exemplo 4: Análise Comparativa
-
-```bash
-python3 results/decoding/analyze_decoding.py \
-  results/decoding/h264.csv \
-  results/decoding/hevc.csv \
-  results/decoding/lz4.csv
 ```
 
 ---
@@ -304,32 +265,19 @@ avformat_open_input() → av_read_frame() → avcodec_send_packet()
 File YUV ← av_frame_unref() ← avcodec_receive_frame()
 ```
 
-**Funções Principais:**
+**Opções de CLI:**
 
-| Função | Descrição |
-|--------|-----------|
-| `main()` | Inicialização, loop de leitura, estatísticas |
-| `decode()` | Envia pacote e recebe frames decodificados |
+| Opção | Default | Descrição |
+|-------|---------|-----------|
+| `-D <N>` | 0 (auto) | Threads decodificadoras FFmpeg |
 
 ### decode_lz4/* (Sistema Multithread)
 
-**Estruturas Principais:**
+**Opções de CLI:**
 
-| Estrutura | Descrição |
-|-----------|-----------|
-| `FrameHeader` | Header do frame (tamanhos, dimensões, pixel format) |
-| `DecodeContext` | Buffers de decodificação por thread |
-| `SharedFrameInfo` | Informações do frame no buffer compartilhado |
-| `ThreadContext` | Contexto privativo de cada thread |
-
-**Sincronização:**
-
-| Primitiva | Uso |
-|-----------|-----|
-| `sem_t g_sem_empty` | Buffer vazio (produtor pode escrever) |
-| `sem_t g_sem_full` | Buffer com dados (consumidor pode ler) |
-| `pthread_mutex_t g_write_mutex` | Escrita sequencial no output |
-| `pthread_cond_t g_write_cond` | Ordenação de escrita |
+| Opção | Default | Descrição |
+|-------|---------|-----------|
+| `-D <N>` | 1 | Threads decodificadoras LZ4 |
 
 **Funções Multithread:**
 
@@ -341,27 +289,13 @@ File YUV ← av_frame_unref() ← avcodec_receive_frame()
 
 ---
 
-## Debug Mode
-
-O sistema LZ4 suporta modo debug para métricas detalhadas:
-
-```bash
-# Compilar com debug
-g++ -DDEBUG -O3 src/decode_lz4/*.cpp ...
-
-# Executar (saída detalhada em stderr)
-./decode_lz4 -i input.lz4 -o output.yuv -p debug -t 4
-```
-
----
-
 ## Verificação de Integridade
 
 Para verificar se a decodificação está correta:
 
 ```bash
 # Comparar com vídeo original (usando FFmpeg para converter YUV)
-ffmpeg -s 352x288 -pix_fmt yuv420p -i output/low_latency.yuv \
-       -i dataset/videos/foreman.mp4 \
+ffmpeg -s 1920x1080 -pix_fmt yuv420p -i output/low_latency.yuv \
+       -i dataset/ssim95_avc.mp4 \
        -lavfi psnr -f null -
 ```

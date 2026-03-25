@@ -39,7 +39,7 @@ pthread_cond_t g_active_threads_cond = PTHREAD_COND_INITIALIZER;
 FILE *g_output_file = NULL;
 
 // Configuração
-int g_num_decode_threads = 1;
+int g_num_decoder_threads = 1;
 int g_num_encoder_threads = 1;
 int g_encoder_type = ENCODER_TYPE_LZ4;
 int g_compression_level = 1;
@@ -144,7 +144,7 @@ void mt_encode_cleanup_state(void) {
 void *mt_producer_thread(void *arg) {
     ProducerArgs *args = (ProducerArgs *)arg;
     const char *input_filename = args->input_filename;
-    int decode_thread_count = args->decode_thread_count;
+    int decoder_thread_count = args->decoder_thread_count;
     int encoder_thread_count = args->encoder_thread_count;
 
     AVFormatContext *fmt_ctx = NULL;
@@ -190,8 +190,8 @@ void *mt_producer_thread(void *arg) {
     }
 
     // Configura threading do decodificador ANTES de abrir
-    if (decode_thread_count > 1) {
-        dec_ctx->thread_count = decode_thread_count;
+    if (decoder_thread_count > 1) {
+        dec_ctx->thread_count = decoder_thread_count;
         dec_ctx->thread_type = FF_THREAD_FRAME;
     }
 
@@ -547,7 +547,7 @@ void *mt_encoder_thread(void *arg) {
         if (!g_debug_mode && fi->timestamp != 0) {
             int64_t latency = av_gettime() - fi->timestamp;
             printf("%s,%d,%d,transcoding,%ld,%d\n",
-                   g_profile_name, g_num_decode_threads, g_num_encoder_threads,
+                   g_profile_name, g_num_decoder_threads, g_num_encoder_threads,
                    latency, g_compression_level);
         }
 
@@ -581,7 +581,7 @@ void *mt_encoder_thread(void *arg) {
 // ============================================================================
 
 int mt_encode_main(const char *input_file, const char *output_file,
-                   int num_decode_threads, int num_encoder_threads,
+                   int num_decoder_threads, int num_encoder_threads,
                    int encoder_type, int compression_level,
                    const char *profile, bool debug_mode) {
     pthread_t producer_thread;
@@ -594,7 +594,7 @@ int mt_encode_main(const char *input_file, const char *output_file,
     CpuStats cpu_start, cpu_end;
 
     // Configuração global
-    g_num_decode_threads = num_decode_threads;
+    g_num_decoder_threads = num_decoder_threads;
     g_num_encoder_threads = num_encoder_threads;
     g_encoder_type = encoder_type;
     g_compression_level = compression_level;
@@ -604,7 +604,7 @@ int mt_encode_main(const char *input_file, const char *output_file,
     if (g_debug_mode) {
         printf("========== MODO DEBUG ==========\n");
         printf("Profile: %s | Decode Threads: %d | Encoder Threads: %d | Encoder: %s | Level: %d\n\n",
-               profile, num_decode_threads, num_encoder_threads,
+               profile, num_decoder_threads, num_encoder_threads,
                encoder_type == ENCODER_TYPE_LZ4HC ? "lz4hc" : "lz4",
                compression_level);
     }
@@ -704,7 +704,7 @@ int mt_encode_main(const char *input_file, const char *output_file,
 
     // Prepara argumentos do produtor
     producer_args.input_filename = input_file;
-    producer_args.decode_thread_count = num_decode_threads;
+    producer_args.decoder_thread_count = num_decoder_threads;
     producer_args.encoder_thread_count = num_encoder_threads;
 
     // Cria thread produtora
@@ -752,7 +752,7 @@ int mt_encode_main(const char *input_file, const char *output_file,
     if (g_debug_mode) {
         printf("\n========== RESUMO ==========\n");
         printf("Profile: %s | Decode Threads: %d | Encoder Threads: %d | Encoder: %s\n",
-               profile, num_decode_threads, num_encoder_threads,
+               profile, num_decoder_threads, num_encoder_threads,
                encoder_type == ENCODER_TYPE_LZ4HC ? "lz4hc" : "lz4");
         printf("Total frames: %d\n", total_frames);
         printf("Tempo total: %ld us (%.2f s)\n", total_time, total_time / 1e6);
@@ -769,8 +769,8 @@ int mt_encode_main(const char *input_file, const char *output_file,
         }
     } else {
         // Formato padrão (compatível com transcode.c)
-        printf("%s,%d,%d,total,%ld,%d\n", profile, num_decode_threads, num_encoder_threads, total_time, compression_level);
-        printf("%s,%d,%d,fps,%.1f,%d\n", profile, num_decode_threads, num_encoder_threads,
+        printf("%s,%d,%d,total,%ld,%d\n", profile, num_decoder_threads, num_encoder_threads, total_time, compression_level);
+        printf("%s,%d,%d,fps,%.1f,%d\n", profile, num_decoder_threads, num_encoder_threads,
                (total_frames * 1e6) / total_time, compression_level);
     }
 

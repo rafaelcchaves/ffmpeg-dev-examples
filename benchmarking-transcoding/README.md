@@ -150,7 +150,7 @@ Além dos scripts `transcode.sh` e `decode.sh`, cada benchmark pode ser compilad
 gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
     -I/usr/local/include -L/usr/local/lib \
     -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
-    -DTHREADS_IN=1 -DTHREADS_OUT=1 -DUSE_LZ_COMPRESS -DLZ_CONFIG=1
+    -DUSE_LZ_COMPRESS -DLZ_CONFIG=1
 
 ./transcode -i video.mp4 -o output.lz4 -e lz4 -p low_latency
 ```
@@ -161,7 +161,7 @@ gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
 gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
     -I/usr/local/include -L/usr/local/lib \
     -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
-    -DTHREADS_IN=1 -DTHREADS_OUT=1 -DUSE_LZ_COMPRESS -DLZ_CONFIG=9
+    -DUSE_LZ_COMPRESS -DLZ_CONFIG=9
 
 ./transcode -i video.mp4 -o output.lz4 -e lz4hc -p low_latency
 ```
@@ -171,10 +171,9 @@ gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
 ```bash
 gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
     -I/usr/local/include -L/usr/local/lib \
-    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
-    -DTHREADS_IN=8 -DTHREADS_OUT=8
+    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2
 
-./transcode -i video.mp4 -o output.mjpeg -e mjpeg -p balanced
+./transcode -i video.mp4 -o output.mjpeg -e mjpeg -p balanced -D 8 -E 8
 ```
 
 **Parâmetros do binário `transcode`:**
@@ -185,12 +184,13 @@ gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
 | `-o` | Arquivo de saída |
 | `-e` | Encoder: `lz4`, `lz4hc`, `mjpeg`, `libsvtjpegxs`, etc. |
 | `-p` | Nome do perfil |
+| `-D` | Threads decodificadoras (default: 0 = auto) |
+| `-E` | Threads codificadoras (default: 0 = auto) |
 
 ### Transcodificação — LZ4/LZ4HC Multithread (`src/transcode_lz4/`)
 
 ```bash
 gcc -O3 -Wall -Wno-unused-variable \
-    -DTHREADS_IN=8 -DTHREADS_OUT=8 \
     src/transcode_lz4/transcode_lz4_main.c \
     src/transcode_lz4/transcode_lz4_mt.c \
     src/queue.c \
@@ -199,7 +199,7 @@ gcc -O3 -Wall -Wno-unused-variable \
     -I/usr/local/include -L/usr/local/lib \
     -lavcodec -lavutil -lavformat -lm -llz4 -lpthread
 
-./transcode_mt -i video.mp4 -o output.lz4 -e lz4 -l 1 -p balanced
+./transcode_mt -i video.mp4 -o output.lz4 -e lz4 -l 1 -p balanced -D 8 -E 8
 ```
 
 **Parâmetros do binário `transcode_mt`:**
@@ -211,6 +211,8 @@ gcc -O3 -Wall -Wno-unused-variable \
 | `-e` | Encoder: `lz4` ou `lz4hc` |
 | `-l` | Nível de compressão (1–12; para LZ4 controla aceleração, para LZ4HC controla compressão) |
 | `-p` | Nome do perfil |
+| `-D` | Threads decodificadoras FFmpeg (default: 0 = auto) |
+| `-E` | Threads codificadoras LZ4 (default: 1) |
 
 ### Decodificação — FFmpeg (`src/decode.cpp`)
 
@@ -220,7 +222,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
     -I/usr/local/include -L/usr/local/lib \
     -lavcodec -lavutil -lavformat -lm
 
-./decode -i video.mp4 -o output.yuv -p balanced
+./decode -i video.mp4 -o output.yuv -p balanced -D 4
 ```
 
 **Parâmetros do binário `decode`:**
@@ -230,6 +232,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 | `-i` | Arquivo de vídeo de entrada |
 | `-o` | Arquivo YUV de saída |
 | `-p` | Nome do perfil |
+| `-D` | Threads decodificadoras FFmpeg (default: 0 = auto) |
 
 ### Decodificação — LZ4 Multithread (`src/decode_lz4/`)
 
@@ -242,17 +245,17 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
     -o decode_lz4 -I/usr/local/include -L/usr/local/lib \
     -lavutil -lm -llz4 -lpthread
 
-./decode_lz4 -i video.lz4 -o output.yuv -p balanced -t 8
+./decode_lz4 -i video.lz4 -o output.yuv -p balanced -D 8
 ```
 
 **Parâmetros do binário `decode_lz4`:**
 
 | Parâmetro | Descrição |
 |-----------|-----------|
-| `-i` | Arquivo `.lz4` de entrada |
+| `-i` | Arquivo `.lz4` de entrada (funciona para LZ4 e LZ4HC) |
 | `-o` | Arquivo YUV de saída |
 | `-p` | Nome do perfil |
-| `-t` | Número de threads de descompressão |
+| `-D` | Threads decodificadoras (default: 1) |
 
 ### Habilitando Escrita de Arquivos
 
@@ -261,7 +264,7 @@ Todos os binários suportam escrita de arquivos de saída via macro de compilaç
 ```bash
 # Exemplo: transcode_mt com escrita habilitada
 gcc -O3 -Wall -Wno-unused-variable \
-    -DTHREADS_IN=8 -DTHREADS_OUT=8 -DENABLE_OUTPUT_WRITE=1 \
+    -DENABLE_OUTPUT_WRITE=1 \
     src/transcode_lz4/transcode_lz4_main.c \
     src/transcode_lz4/transcode_lz4_mt.c \
     src/queue.c \
@@ -277,11 +280,16 @@ Sem essa flag, os binários executam o benchmark em modo puro (sem I/O de disco)
 
 | Macro | Valor | Descrição |
 |-------|-------|-----------|
-| `THREADS_IN` | `1`, `4`, `8`, `16` | Número de threads de decodificação |
-| `THREADS_OUT` | `1`, `8`, `16` | Número de threads de codificação |
 | `USE_LZ_COMPRESS` | — | Habilita compressão LZ4 no single-thread |
 | `LZ_CONFIG` | `1`–`12` | Nível de aceleração (LZ4) ou compressão (LZ4HC) |
 | `ENABLE_OUTPUT_WRITE` | `0`/`1` | Habilita escrita de arquivos de saída |
+
+### Opções de CLI para Threads
+
+| Opção | Default | Descrição |
+|-------|---------|-----------|
+| `-D <N>` | 0 (auto) | Threads decodificadoras |
+| `-E <N>` | 0 (auto) / 1 | Threads codificadoras |
 
 ## Formato dos Arquivos de Resultados
 
@@ -290,12 +298,12 @@ Os scripts de benchmark geram arquivos CSV com os seguintes formatos:
 ### Transcodificação (`transcode.sh`)
 
 ```
-profile,threads_in,threads_out,type,time[,compression_level|acceleration]
+profile,decoder_threads,encoder_threads,type,time[,compression_level|acceleration]
 ```
 
 - `profile`: Nome do perfil (`low_latency`, `balanced`, `high_throughput`)
-- `threads_in`: Número de threads de decodificação
-- `threads_out`: Número de threads de codificação
+- `decoder_threads`: Número de threads de decodificação
+- `encoder_threads`: Número de threads de codificação
 - `type`: Tipo de medição (`transcoding`, `total`, `fps`)
 - `time`: Tempo em microssegundos (ou FPS para tipo `fps`)
 - `compression_level`: Nível de compressão (apenas para LZ4HC)
@@ -304,12 +312,12 @@ profile,threads_in,threads_out,type,time[,compression_level|acceleration]
 ### Decodificação (`decode.sh`)
 
 ```
-profile,threads_in,threads_out,type,time
+profile,decoder_threads,encoder_threads,type,time
 ```
 
 - `profile`: Nome do perfil (`low_latency`, `balanced`, `high_throughput`)
-- `threads_in`: Número de threads de decodificação
-- `threads_out`: Sempre 0 para decodificação
+- `decoder_threads`: Número de threads de decodificação
+- `encoder_threads`: Sempre 0 para decodificação
 - `type`: Tipo de medição (`decoding`, `total`, `fps`)
 - `time`: Tempo em microssegundos (ou FPS para tipo `fps`)
 
