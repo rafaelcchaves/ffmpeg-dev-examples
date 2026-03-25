@@ -5,6 +5,7 @@
 
 #include "decode_lz4.h"
 #include "../cpu_stats.h"
+#include "../fps_limiter.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -20,7 +21,8 @@ extern int mt_decode_main(int num_threads, const std::string &input_file,
 // Função single-thread original
 int st_decode_main(const std::string &input_file,
                    const std::string &output_file,
-                   const std::string &profile);
+                   const std::string &profile,
+                   double target_fps);
 
 void print_usage(const char *prog_name) {
     fprintf(stderr, "Uso: %s [opcoes]\n", prog_name);
@@ -29,6 +31,7 @@ void print_usage(const char *prog_name) {
     fprintf(stderr, "  -o <arquivo>    Arquivo de saida YUV\n");
     fprintf(stderr, "  -p <profile>    Nome do profile (ex: low_latency)\n");
     fprintf(stderr, "  -D <threads>    Numero de threads decodificadoras (default: 1 = single-thread)\n");
+    fprintf(stderr, "  -f <fps>        FPS alvo para limitar leitura de entrada (default: sem limite)\n");
     fprintf(stderr, "  -d              Modo debug: exibe métricas detalhadas de I/O e decodificação\n");
     fprintf(stderr, "  -w              Habilita escrita de arquivo de saida (default: desabilitado)\n");
     fprintf(stderr, "\nExemplos:\n");
@@ -43,10 +46,11 @@ int main(int argc, char **argv) {
     std::string profile;
     int num_decoder_threads = 1;
     bool enable_write = false;
+    double target_fps = 0.0;
     int opt;
 
     // Parse argumentos
-    while ((opt = getopt(argc, argv, "i:o:p:D:dw")) != -1) {
+    while ((opt = getopt(argc, argv, "i:o:p:D:f:dw")) != -1) {
         switch (opt) {
             case 'i':
                 input_file = optarg;
@@ -59,6 +63,9 @@ int main(int argc, char **argv) {
                 break;
             case 'D':
                 num_decoder_threads = atoi(optarg);
+                break;
+            case 'f':
+                target_fps = atof(optarg);
                 break;
             case 'd':
                 g_debug_mode = true;
@@ -93,10 +100,10 @@ int main(int argc, char **argv) {
     // Escolhe modo de operação
     if (num_decoder_threads == 1) {
         // Modo single-thread (implementação original)
-        return st_decode_main(input_file, output_file, profile);
+        return st_decode_main(input_file, output_file, profile, target_fps);
     } else {
         // Modo multi-thread
-        return mt_decode_main(num_decoder_threads, input_file, output_file, profile);
+        return mt_decode_main(num_decoder_threads, input_file, output_file, profile, target_fps);
     }
 
     return 0;
@@ -105,13 +112,17 @@ int main(int argc, char **argv) {
 // Implementação single-thread (código original)
 int st_decode_main(const std::string &input_file,
                    const std::string &output_file,
-                   const std::string &profile) {
+                   const std::string &profile,
+                   double target_fps) {
     FILE *infile = NULL;
     FILE *outfile = NULL;
     DecodeContext ctx;
     int allocated = 0;
     int frames = 0;
     CpuStats cpu_start, cpu_end;
+
+    FpsLimiter limiter;
+    fps_limiter_init(&limiter, target_fps);
 
     // Inicializa contexto
     decode_context_init(&ctx);
@@ -164,6 +175,8 @@ int st_decode_main(const std::string &input_file,
             decode_context_free(&ctx);
             return 1;
         }
+
+        fps_limiter_wait(&limiter);
 
         // Decodifica
         int64_t st = av_gettime();

@@ -1,24 +1,27 @@
 #!/usr/bin/env bash
 
 usage() {
-    echo "Usage: $0 -i <input-video> -r <csv-result> -e <encoder> [-o <output-dir>] [-w]"
+    echo "Usage: $0 -i <input-video> -r <csv-result> -e <encoder> [-o <output-dir>] [-f <fps>] [-w]"
     echo "  -i  Input video file"
     echo "  -r  CSV result file"
     echo "  -e  Encoder (mjpeg, libsvtjpegxs, lz4, lz4hc, or other)"
     echo "  -o  Output directory (default: .)"
+    echo "  -f  Target FPS for input read throttling (default: no limit)"
     echo "  -w  Enable output file writing (default: disabled for benchmark)"
     exit 1
 }
 
 output_dir="."
 enable_write=0
+target_fps=""
 
-while getopts "i:r:e:o:w" opt; do
+while getopts "i:r:e:o:f:w" opt; do
     case "$opt" in
         i) in_file="$OPTARG";;
         r) results_file="$OPTARG";;
         e) encoder_name="$OPTARG";;
         o) output_dir="$OPTARG";;
+        f) target_fps="$OPTARG";;
         w) enable_write=1;;
         *) usage;;
     esac
@@ -62,6 +65,7 @@ if [ "$encoder_name" = "lz4" ] || [ "$encoder_name" = "lz4hc" ]; then
         src/transcode_lz4/transcode_lz4_mt.c \
         src/queue.c \
         src/cpu_stats.cpp \
+        src/fps_limiter.c \
         -o transcode_mt \
         -I/usr/local/include -L/usr/local/lib \
         -lavcodec -lavutil -lavformat -lm -llz4 -lpthread
@@ -69,7 +73,7 @@ if [ "$encoder_name" = "lz4" ] || [ "$encoder_name" = "lz4hc" ]; then
 else
     # Other encoders (mjpeg, libsvtjpegxs, etc.) - use transcode.c
     echo ">>> Building transcode ..."
-    gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode -I/usr/local/include -L/usr/local/lib \
+    gcc -O3 -Wall -Wno-unused-variable src/transcode.c src/fps_limiter.c -o transcode -I/usr/local/include -L/usr/local/lib \
         -lavcodec -lavutil -lavformat -lm
     bin="transcode"
 fi
@@ -100,9 +104,11 @@ for profile_config in "${profiles[@]}"; do
     echo ">>> Running $bin for $profile_name with -D $decoder_threads_config -E $encoder_threads_config ..."
     write_flag=""
     if [ "$enable_write" -eq 1 ]; then write_flag="-w"; fi
+    fps_flag=""
+    if [ -n "$target_fps" ]; then fps_flag="-f $target_fps"; fi
     lz_flag=""
     if [ "$bin" = "transcode_mt" ]; then lz_flag="-l $lz_config"; fi
-    "./$bin" -i "$in_file" -o "$output_path" -e "$encoder_name" $lz_flag -p "$profile_name" -D "$decoder_threads_config" -E "$encoder_threads_config" $write_flag >> "$results_file"
+    "./$bin" -i "$in_file" -o "$output_path" -e "$encoder_name" $lz_flag -p "$profile_name" -D "$decoder_threads_config" -E "$encoder_threads_config" $fps_flag $write_flag >> "$results_file"
 done
 
 rm -f "$bin"

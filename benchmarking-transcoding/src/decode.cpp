@@ -11,10 +11,12 @@ extern "C" {
 #include <unistd.h>
 #include "cpu_stats.h"
 #include "decode_mjpeg_mt.h"
+#include "fps_limiter.h"
 
 int frames;
 int num_decoder_threads = 0;
 const char *profile_name = NULL;
+double target_fps = 0.0;
 static bool g_enable_write = false;
 
 static void decode(AVCodecContext *dec_ctx, AVPacket *inpkt, AVFrame *frame, FILE *outfile)
@@ -79,7 +81,7 @@ int main(int argc, char** argv){
     AVFrame *frame = NULL;
 
     int opt;
-    while ((opt = getopt(argc, argv, "i:o:p:D:w")) != -1) {
+    while ((opt = getopt(argc, argv, "i:o:p:D:f:w")) != -1) {
         switch (opt) {
             case 'i':
                 infilename = optarg;
@@ -93,15 +95,19 @@ int main(int argc, char** argv){
             case 'D':
                 num_decoder_threads = atoi(optarg);
                 break;
+            case 'f':
+                target_fps = atof(optarg);
+                break;
             case 'w':
                 g_enable_write = true;
                 break;
             default:
-                fprintf(stderr, "Usage: %s -i <input-file> [-o <output-file>] -p <profile> [-D <decoder_threads>] [-w]\n", argv[0]);
+                fprintf(stderr, "Usage: %s -i <input-file> [-o <output-file>] -p <profile> [-D <decoder_threads>] [-f <fps>] [-w]\n", argv[0]);
                 fprintf(stderr, "  -i  Input video file\n");
                 fprintf(stderr, "  -o  Output YUV file (default: output.yuv)\n");
                 fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
                 fprintf(stderr, "  -D  Decoder threads (default: 0 = auto)\n");
+                fprintf(stderr, "  -f  Target FPS for input read throttling (default: no limit)\n");
                 fprintf(stderr, "  -w  Enable output file writing (default: disabled for benchmark)\n");
                 exit(1);
         }
@@ -158,7 +164,7 @@ int main(int argc, char** argv){
         av_frame_free(&frame);
         av_packet_free(&inpkt);
         return mjpeg_mt_decode(infilename, outfilename, profile_name,
-                               num_decoder_threads, g_enable_write);
+                               num_decoder_threads, g_enable_write, target_fps);
     }
 
     incodec = avcodec_find_decoder(video_stream->codecpar->codec_id);
@@ -188,8 +194,12 @@ int main(int argc, char** argv){
     start_time = av_gettime();
     cpu_stats_read(&cpu_start);
 
+    FpsLimiter limiter;
+    fps_limiter_init(&limiter, target_fps);
+
     while (av_read_frame(fmt_ctx, inpkt) >= 0) {
         if (inpkt->stream_index == video_stream_index) {
+            fps_limiter_wait(&limiter);
             decode(incodec_ctx, inpkt, frame, output);
         }
         av_packet_unref(inpkt);

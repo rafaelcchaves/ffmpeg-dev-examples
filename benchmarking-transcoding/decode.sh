@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 
 usage() {
-    echo "Usage: $0 -i <input-video> -r <csv-result> [-o <output-dir>] [-l <lz-algorithm>] [-p <profile>] [-w]"
+    echo "Usage: $0 -i <input-video> -r <csv-result> [-o <output-dir>] [-l <lz-algorithm>] [-p <profile>] [-f <fps>] [-w]"
     echo "  -i  Input video file"
     echo "  -r  CSV result file"
     echo "  -o  Output directory (default: .)"
     echo "  -l  LZ algorithm (lz4 or lz4hc)"
     echo "  -p  Profile: low_latency, balanced, high_throughput (default: all profiles)"
+    echo "  -f  Target FPS for input read throttling (default: no limit)"
     echo "  -w  Enable output file writing (default: disabled for benchmark)"
     exit 1
 }
@@ -15,14 +16,16 @@ output_dir="."
 lz_algorithm=""
 profile=""
 enable_write=0
+target_fps=""
 
-while getopts "i:r:o:l:p:w" opt; do
+while getopts "i:r:o:l:p:f:w" opt; do
     case "$opt" in
         i) in_file="$OPTARG";;
         r) results_file="$OPTARG";;
         o) output_dir="$OPTARG";;
         l) lz_algorithm="$OPTARG";;
         p) profile="$OPTARG";;
+        f) target_fps="$OPTARG";;
         w) enable_write=1;;
         *) usage;;
     esac
@@ -54,6 +57,7 @@ if [ "$lz_algorithm" == "" ]; then
     echo ">>> Building decode ..."
     g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
         src/decode.cpp src/decode_mjpeg_mt.cpp src/queue.c src/cpu_stats.cpp \
+        src/fps_limiter.c \
         -o decode -I/usr/local/include -L/usr/local/lib \
         -lavcodec -lavutil -lavformat -lm -lpthread
 
@@ -65,7 +69,9 @@ if [ "$lz_algorithm" == "" ]; then
         echo ">>> Running decode for $profile_name with -D $decoder_threads_config ..."
         write_flag=""
         if [ "$enable_write" -eq 1 ]; then write_flag="-w"; fi
-        "./decode" -i "$in_file" -o "$output_path" -p "$profile_name" -D "$decoder_threads_config" $write_flag >> "$results_file"
+        fps_flag=""
+        if [ -n "$target_fps" ]; then fps_flag="-f $target_fps"; fi
+        "./decode" -i "$in_file" -o "$output_path" -p "$profile_name" -D "$decoder_threads_config" $fps_flag $write_flag >> "$results_file"
     done
 
     rm -f decode
@@ -101,6 +107,7 @@ else
         src/decode_lz4/frame_reader.cpp src/decode_lz4/frame_decoder.cpp \
         src/decode_lz4/frame_writer.cpp src/decode_lz4/stats.cpp \
         src/queue.c src/cpu_stats.cpp \
+        src/fps_limiter.c \
         -o decode_lz4 -I/usr/local/include -L/usr/local/lib \
         -lavutil -lm -llz4 -lpthread
 
@@ -112,7 +119,9 @@ else
         echo ">>> Running decode_lz4 for $profile_name with -D $decoder_threads_config ..."
         write_flag=""
         if [ "$enable_write" -eq 1 ]; then write_flag="-w"; fi
-        "./decode_lz4" -i "$in_file" -o "$output_path" -p "$profile_name" -D "$decoder_threads_config" $write_flag >> "$results_file" 2>&1
+        fps_flag=""
+        if [ -n "$target_fps" ]; then fps_flag="-f $target_fps"; fi
+        "./decode_lz4" -i "$in_file" -o "$output_path" -p "$profile_name" -D "$decoder_threads_config" $fps_flag $write_flag >> "$results_file" 2>&1
     done
 
     rm -f decode_lz4

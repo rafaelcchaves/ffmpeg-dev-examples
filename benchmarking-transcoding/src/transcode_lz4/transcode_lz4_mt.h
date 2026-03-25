@@ -59,6 +59,7 @@ typedef struct {
     const char *input_filename;   /**< Arquivo de entrada (vídeo) */
     int decoder_thread_count;     /**< Número de threads para decodificador FFmpeg */
     int encoder_thread_count;     /**< Número de threads codificadoras */
+    double target_fps;            /**< FPS alvo para limitar leitura (0 = sem limite) */
 } ProducerArgs;
 
 // ============================================================================
@@ -191,6 +192,7 @@ void *mt_encoder_thread(void *arg);
 int mt_encode_main(const char *input_file, const char *output_file,
                    int num_decoder_threads, int num_encoder_threads,
                    int encoder_type, int compression_level,
-                   const char *profile, bool debug_mode);
+                   const char *profile, bool debug_mode,
+                   double target_fps);
 
 #endif /* TRANSCODE_LZ4_MT_H */

@@ -10,6 +10,7 @@ Este projeto implementa um sistema de benchmarking para transcodificação e dec
 - **Decodificação**: FFmpeg padrão, LZ4 multithread e MJPEG multithread
 - **Arquitetura Multithread**: Producer-consumer com fila genérica (Queue)
 - **Flag de Escrita**: Permite benchmarks sem I/O de disco (padrão)
+- **Limitador de FPS**: Simula fonte de dados com taxa fixa via `-f <fps>`
 - **Perfis de Threads**: low_latency, balanced, high_throughput
 - **Threads via CLI**: Configuração de threads em tempo de execução (`-D` decoder, `-E` encoder)
 
@@ -20,6 +21,7 @@ benchmarking-transcoding/
 ├── src/
 │   ├── frame_types.h            # Tipos compartilhados (FrameHeader, FrameItem)
 │   ├── queue.h / queue.c        # Fila genérica thread-safe com ownership
+│   ├── fps_limiter.h / fps_limiter.c  # Limitador de FPS para leitura de entrada
 │   ├── transcode.c              # Transcodificação single-thread
 │   ├── decode.cpp               # Decodificação FFmpeg (com dispatch MJPEG MT automático)
 │   ├── decode_mjpeg_mt.h        # Header do pipeline MJPEG multithread
@@ -208,6 +210,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 |-------|---------|-----------|
 | `-D <N>` | 0 (auto) | Threads decodificadoras FFmpeg |
 | `-E <N>` | 1 | Threads codificadoras LZ4 |
+| `-f <fps>` | 0 (sem limite) | FPS alvo para limitar leitura de entrada |
 | `-w` | desabilitado | Habilita escrita de arquivos de saída |
 
 ---
@@ -226,6 +229,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 | `-r` | Arquivo CSV de resultados |
 | `-e` | Encoder: `mjpeg`, `libsvtjpegxs`, `lz4`, `lz4hc` |
 | `-o` | Diretório de saída (default: `.`) |
+| `-f <fps>` | FPS alvo para limitar leitura de entrada (default: sem limite) |
 | `-w` | Habilita escrita de arquivos (default: desabilitado) |
 
 **Exemplos:**
@@ -237,6 +241,9 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 # Transcodificação MJPEG com escrita
 ./transcode.sh -i dataset/ssim95_avc.mp4 -r results/mjpeg.csv -e mjpeg -o output/ -w
 
+# LZ4 com limite de 30 FPS na entrada
+./transcode.sh -i dataset/ssim95_avc.mp4 -r results/lz4_30fps.csv -e lz4 -f 30 -o output/
+
 # LZ4HC com alta compressão
 ./transcode.sh -i dataset/ssim95_avc.mp4 -r results/lz4hc.csv -e lz4hc -o output/ -w
 ```
@@ -244,7 +251,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 ### Decodificação
 
 ```bash
-./decode.sh -i <video> -r <csv> [-o <dir>] [-l <lz>] [-p <profile>] [-w]
+./decode.sh -i <video> -r <csv> [-o <dir>] [-l <lz>] [-p <profile>] [-f <fps>] [-w]
 ```
 
 | Parâmetro | Descrição |
@@ -254,6 +261,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 | `-o` | Diretório de saída (default: `.`) |
 | `-l` | Algoritmo LZ: `lz4` ou `lz4hc` |
 | `-p` | Perfil específico: `low_latency`, `balanced`, `high_throughput` |
+| `-f <fps>` | FPS alvo para limitar leitura de entrada (default: sem limite) |
 | `-w` | Habilita escrita de arquivos (default: desabilitado) |
 
 **Exemplos:**
@@ -264,6 +272,9 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 
 # Decodificação LZ4
 ./decode.sh -i output/high_throughput.lz4 -r results/decode_lz4.csv -l lz4 -o output/
+
+# Decodificação LZ4 com limite de 30 FPS
+./decode.sh -i output/high_throughput.lz4 -r results/decode_lz4.csv -l lz4 -f 30 -o output/
 
 # Com escrita habilitada
 ./decode.sh -i output/high_throughput.lz4 -r results/decode_lz4.csv -l lz4 -o output/ -w
@@ -284,7 +295,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 ### transcode_mt (LZ4/LZ4HC - single-thread + multithread)
 
 ```bash
-./transcode_mt -i <input> [-o <output>] -e <encoder> -l <level> -p <profile> -D <decoder_threads> -E <encoder_threads> [-w]
+./transcode_mt -i <input> [-o <output>] -e <encoder> -l <level> -p <profile> -D <decoder_threads> -E <encoder_threads> [-f <fps>] [-w]
 ```
 
 | Parâmetro | Descrição |
@@ -296,12 +307,13 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 | `-p` | Nome do perfil |
 | `-D` | Threads decodificadoras FFmpeg (default: 0 = auto) |
 | `-E` | Threads codificadoras LZ4 (1 = single-thread, >1 = multithread) |
+| `-f <fps>` | FPS alvo para limitar leitura de entrada (default: sem limite) |
 | `-w` | Habilita escrita de arquivo de saída |
 
 ### decode_lz4
 
 ```bash
-./decode_lz4 -i <input> [-o <output>] -p <profile> -D <threads> [-w]
+./decode_lz4 -i <input> [-o <output>] -p <profile> -D <threads> [-f <fps>] [-w]
 ```
 
 | Parâmetro | Descrição |
@@ -310,6 +322,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 | `-o` | Arquivo .yuv de saída (default: output.yuv) |
 | `-p` | Nome do perfil |
 | `-D` | Número de threads decodificadoras (default: 1) |
+| `-f <fps>` | FPS alvo para limitar leitura de entrada (default: sem limite) |
 | `-w` | Habilita escrita de arquivo de saída |
 
 ---

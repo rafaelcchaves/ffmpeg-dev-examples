@@ -5,6 +5,7 @@
 
 #include "decode_lz4.h"
 #include "../cpu_stats.h"
+#include "../fps_limiter.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +41,7 @@ FILE *g_output_file = NULL;
 // Configuração
 int g_num_decoder_threads = 0;
 std::string g_profile_name;
+double g_target_fps = 0.0;
 
 // Métricas acumuladas (atómicas para thread-safety)
 std::atomic<int64_t> g_total_read_time{0};
@@ -86,6 +88,9 @@ void *mt_producer_thread(void *arg) {
 
     int sequence_number = 0;
 
+    FpsLimiter limiter;
+    fps_limiter_init(&limiter, g_target_fps);
+
     // Loop principal de leitura
     while (1) {
         FrameHeader header;
@@ -119,6 +124,9 @@ void *mt_producer_thread(void *arg) {
         }
 
         int64_t read_time = av_gettime() - read_start;
+
+        // FPS limiter (após leitura completa do frame, antes de processamento)
+        fps_limiter_wait(&limiter);
 
         // 2a. Acumular métricas de leitura
         g_total_read_time += read_time;
@@ -275,7 +283,8 @@ void *mt_decoder_thread(void *arg) {
 // ============================================================================
 
 int mt_decode_main(int num_threads, const std::string &input_file,
-                   const std::string &output_file, const std::string &profile) {
+                   const std::string &output_file, const std::string &profile,
+                   double target_fps) {
     pthread_t producer_thread;
     pthread_t *decoder_threads = NULL;
     ThreadContext *thread_contexts = NULL;
@@ -286,6 +295,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
 
     g_num_decoder_threads = num_threads;
     g_profile_name = profile;
+    g_target_fps = target_fps;
 
     // Imprime cabeçalho de debug se modo debug ativado
     if (g_debug_mode) {

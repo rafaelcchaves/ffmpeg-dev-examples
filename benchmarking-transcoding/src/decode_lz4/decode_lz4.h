@@ -91,6 +91,7 @@ extern FILE *g_output_file;
 // Configuração
 extern int g_num_decoder_threads;
 extern std::string g_profile_name;
+extern double g_target_fps;
 
 // ============================================================================
 // Funções do sistema multithread
@@ -112,6 +113,7 @@ void *mt_decoder_thread(void *arg);
 
 // Função principal multithread
 int mt_decode_main(int num_threads, const std::string &input_file,
-                   const std::string &output_file, const std::string &profile);
+                   const std::string &output_file, const std::string &profile,
+                   double target_fps);
 
 #endif

@@ -5,6 +5,7 @@
 
 #include "transcode_lz4_mt.h"
 #include "../cpu_stats.h"
+#include "../fps_limiter.h"
 #include <unistd.h>
 
 // ============================================================================
@@ -217,12 +218,17 @@ void *mt_producer_thread(void *arg) {
                dec_ctx->width, dec_ctx->height, dec_ctx->pix_fmt);
     }
 
+    FpsLimiter limiter;
+    fps_limiter_init(&limiter, args->target_fps);
+
     // Loop principal de decodificação
     while (av_read_frame(fmt_ctx, pkt) >= 0) {
         if (pkt->stream_index != video_stream_index) {
             av_packet_unref(pkt);
             continue;
         }
+
+        fps_limiter_wait(&limiter);
 
         // Sobrescreve DTS com timestamp atual (compatível com transcode.c)
         pkt->dts = av_gettime();
@@ -576,7 +582,8 @@ void *mt_encoder_thread(void *arg) {
 int mt_encode_main(const char *input_file, const char *output_file,
                    int num_decoder_threads, int num_encoder_threads,
                    int encoder_type, int compression_level,
-                   const char *profile, bool debug_mode) {
+                   const char *profile, bool debug_mode,
+                   double target_fps) {
     pthread_t producer_thread;
     pthread_t *encoder_threads = NULL;
     EncoderThreadContext *thread_contexts = NULL;
@@ -688,6 +695,7 @@ int mt_encode_main(const char *input_file, const char *output_file,
     producer_args.input_filename = input_file;
     producer_args.decoder_thread_count = num_decoder_threads;
     producer_args.encoder_thread_count = num_encoder_threads;
+    producer_args.target_fps = target_fps;
 
     // Cria thread produtora
     ret = pthread_create(&producer_thread, NULL, mt_producer_thread, &producer_args);

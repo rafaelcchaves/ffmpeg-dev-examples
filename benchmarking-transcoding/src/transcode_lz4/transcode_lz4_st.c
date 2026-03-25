@@ -10,6 +10,7 @@
 #include "transcode_lz4_st.h"
 #include "transcode_lz4_mt.h"
 #include "../cpu_stats.h"
+#include "../fps_limiter.h"
 
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
@@ -22,12 +23,16 @@
 
 int st_encode_main(const char *input_file, const char *output_file,
                    int decoder_threads, int encoder_type,
-                   int compression_level, const char *profile) {
+                   int compression_level, const char *profile,
+                   double target_fps) {
     int ret;
     int width = 0, height = 0;
     double fps_double = 0.0;
     int frames = 0;
     FILE *output = NULL;
+
+    FpsLimiter limiter;
+    fps_limiter_init(&limiter, target_fps);
 
     AVFormatContext *fmt_ctx = NULL;
     int video_stream_index = -1;
@@ -190,6 +195,8 @@ int st_encode_main(const char *input_file, const char *output_file,
             av_packet_unref(inpkt);
             continue;
         }
+
+        fps_limiter_wait(&limiter);
 
         int64_t frame_start = av_gettime();
 

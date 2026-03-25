@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <libavformat/avformat.h>
 #include <libavutil/imgutils.h>
+#include "fps_limiter.h"
 
 /*
 To run psnr:
@@ -27,6 +28,7 @@ int num_encoder_threads = 0;
 const char *encoder_name = NULL;
 const char *profile_name = NULL;
 static int g_enable_write = 0;
+double target_fps = 0.0;
 
 static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket *inpkt, AVFrame *frame, AVPacket *outpkt,
                       FILE *outfile)
@@ -112,7 +114,7 @@ int main(int argc, char** argv){
     AVPacket *outpkt;
     int opt;
 
-    while ((opt = getopt(argc, argv, "i:o:e:p:D:E:w")) != -1) {
+    while ((opt = getopt(argc, argv, "i:o:e:p:D:E:f:w")) != -1) {
         switch (opt) {
             case 'i':
                 infilename = optarg;
@@ -132,17 +134,21 @@ int main(int argc, char** argv){
             case 'E':
                 num_encoder_threads = atoi(optarg);
                 break;
+            case 'f':
+                target_fps = atof(optarg);
+                break;
             case 'w':
                 g_enable_write = 1;
                 break;
             default:
-                fprintf(stderr, "Usage: %s -i <input-file> [-o <output-file>] -e <encoder> -p <profile> [-D <decoder_threads>] [-E <encoder_threads>] [-w]\n", argv[0]);
+                fprintf(stderr, "Usage: %s -i <input-file> [-o <output-file>] -e <encoder> -p <profile> [-D <decoder_threads>] [-E <encoder_threads>] [-f <fps>] [-w]\n", argv[0]);
                 fprintf(stderr, "  -i  Input video file\n");
                 fprintf(stderr, "  -o  Output file (default: output)\n");
                 fprintf(stderr, "  -e  Encoder name (e.g., mjpeg, libsvtjpegxs)\n");
                 fprintf(stderr, "  -p  Profile name (e.g., low_latency, balanced, high_throughput)\n");
                 fprintf(stderr, "  -D  Decoder threads (default: 0 = auto)\n");
                 fprintf(stderr, "  -E  Encoder threads (default: 0 = auto)\n");
+                fprintf(stderr, "  -f  Target FPS for input read throttling (default: no limit)\n");
                 fprintf(stderr, "  -w  Enable output file writing (default: disabled for benchmark)\n");
                 exit(1);
         }
@@ -159,6 +165,10 @@ int main(int argc, char** argv){
         exit(1);
     }
     if (!outfilename) outfilename = "output";
+
+    FpsLimiter limiter;
+    fps_limiter_init(&limiter, target_fps);
+
     if (g_enable_write) {
         output = fopen(outfilename, "wb");
         if (!output) {
@@ -268,6 +278,7 @@ int main(int argc, char** argv){
     start_time = av_gettime();
     while (av_read_frame(fmt_ctx, inpkt) >= 0) {
         if (inpkt->stream_index == video_stream_index) {
+            fps_limiter_wait(&limiter);
             transcode(incodec_ctx, outcodec_ctx, inpkt, frame, outpkt, output);
         }
         av_packet_unref(inpkt);

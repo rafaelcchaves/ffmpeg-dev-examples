@@ -57,6 +57,7 @@ extern FILE *g_mjpeg_output_file;
 extern int g_mjpeg_num_threads;
 extern std::string g_mjpeg_profile_name;
 extern bool g_mjpeg_enable_write;
+extern double g_mjpeg_target_fps;
 
 // Metricas atomicas
 extern std::atomic<int64_t> g_mjpeg_total_demux_time;
@@ -67,6 +68,7 @@ extern std::atomic<int64_t> g_mjpeg_total_decode_time;
 // ============================================================================
 
 int mjpeg_mt_decode(const char *input, const char *output,
-                    const char *profile, int threads, bool enable_write);
+                    const char *profile, int threads, bool enable_write,
+                    double target_fps);
 
 #endif

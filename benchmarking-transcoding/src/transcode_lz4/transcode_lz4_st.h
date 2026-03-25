@@ -22,6 +22,7 @@
  */
 int st_encode_main(const char *input_file, const char *output_file,
                    int decoder_threads, int encoder_type,
-                   int compression_level, const char *profile);
+                   int compression_level, const char *profile,
+                   double target_fps);
 
 #endif /* TRANSCODE_LZ4_ST_H */

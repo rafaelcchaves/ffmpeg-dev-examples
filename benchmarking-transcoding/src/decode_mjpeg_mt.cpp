@@ -10,6 +10,7 @@
 
 #include "decode_mjpeg_mt.h"
 #include "cpu_stats.h"
+#include "fps_limiter.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +41,7 @@ FILE *g_mjpeg_output_file = NULL;
 int g_mjpeg_num_threads = 0;
 std::string g_mjpeg_profile_name;
 bool g_mjpeg_enable_write = false;
+double g_mjpeg_target_fps = 0.0;
 
 std::atomic<int64_t> g_mjpeg_total_demux_time{0};
 std::atomic<int64_t> g_mjpeg_total_decode_time{0};
@@ -92,12 +94,17 @@ void *mt_mjpeg_producer_thread(void *arg) {
         return NULL;
     }
 
+    FpsLimiter limiter;
+    fps_limiter_init(&limiter, g_mjpeg_target_fps);
+
     // Loop principal de demux
     while (av_read_frame(fmt_ctx, pkt) >= 0) {
         if (pkt->stream_index != video_stream_index) {
             av_packet_unref(pkt);
             continue;
         }
+
+        fps_limiter_wait(&limiter);
 
         int64_t demux_start = av_gettime();
 
@@ -332,7 +339,8 @@ static int init_decoder_threads(MJpegThreadContext *ctxs, int count,
 // ============================================================================
 
 int mjpeg_mt_decode(const char *input, const char *output,
-                    const char *profile, int threads, bool enable_write) {
+                    const char *profile, int threads, bool enable_write,
+                    double target_fps) {
     pthread_t producer_thread;
     pthread_t *decoder_threads = NULL;
     MJpegThreadContext *thread_contexts = NULL;
@@ -343,6 +351,7 @@ int mjpeg_mt_decode(const char *input, const char *output,
     g_mjpeg_num_threads = threads;
     g_mjpeg_profile_name = profile;
     g_mjpeg_enable_write = enable_write;
+    g_mjpeg_target_fps = target_fps;
 
     // -----------------------------------------------------------------------
     // Probe: abre avformat para obter stream info e criar decoder contexts

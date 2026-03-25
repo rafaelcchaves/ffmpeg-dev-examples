@@ -5,6 +5,7 @@
 
 #include "transcode_lz4_mt.h"
 #include "transcode_lz4_st.h"
+#include "../fps_limiter.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +26,7 @@ void print_usage(const char *prog_name) {
     fprintf(stderr, "  -p <profile>    Nome do profile para metricas\n");
     fprintf(stderr, "  -D <N>          Threads decodificadoras FFmpeg (default: 0 = auto)\n");
     fprintf(stderr, "  -E <N>          Threads codificadoras LZ4 (default: 1)\n");
+    fprintf(stderr, "  -f <fps>        FPS alvo para limitar leitura de entrada (default: sem limite)\n");
     fprintf(stderr, "  -d              Modo debug: exibe metricas detalhadas\n");
     fprintf(stderr, "  -w              Habilita escrita de arquivo de saida (default: desabilitado)\n");
     fprintf(stderr, "\nExemplos:\n");
@@ -45,10 +47,11 @@ int main(int argc, char **argv) {
     int compression_level = 1;
     bool debug_mode = false;
     bool enable_write = false;
+    double target_fps = 0.0;
     int opt;
 
     // Parse argumentos
-    while ((opt = getopt(argc, argv, "i:o:e:l:p:dD:E:w")) != -1) {
+    while ((opt = getopt(argc, argv, "i:o:e:l:p:dD:E:f:w")) != -1) {
         switch (opt) {
             case 'i':
                 input_file = optarg;
@@ -70,6 +73,9 @@ int main(int argc, char **argv) {
                 break;
             case 'E':
                 num_encoder_threads = atoi(optarg);
+                break;
+            case 'f':
+                target_fps = atof(optarg);
                 break;
             case 'd':
                 debug_mode = true;
@@ -135,11 +141,11 @@ int main(int argc, char **argv) {
     if (num_encoder_threads == 1) {
         // Modo single-thread (sem Queue, sem threads para compressão)
         return st_encode_main(input_file, output_file, num_decoder_threads,
-                              encoder_type, compression_level, profile);
+                              encoder_type, compression_level, profile, target_fps);
     } else {
         // Modo multi-thread (producer-consumer)
         return mt_encode_main(input_file, output_file, num_decoder_threads,
                               num_encoder_threads, encoder_type,
-                              compression_level, profile, debug_mode);
+                              compression_level, profile, debug_mode, target_fps);
     }
 }

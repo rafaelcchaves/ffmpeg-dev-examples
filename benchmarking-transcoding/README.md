@@ -12,6 +12,7 @@ Este projeto contém um conjunto de scripts para realizar benchmarking de transc
 -   `src/decode_lz4/` / `decode.sh`: Decodificação LZ4 multithread (arquitetura producer-consumer).
 -   `src/frame_types.h`: Tipos compartilhados entre encode e decode (`FrameHeader`, `FrameItem`).
 -   `src/queue.h` / `src/queue.c`: Fila genérica thread-safe com gerenciamento de ownership.
+-   `src/fps_limiter.h` / `src/fps_limiter.c`: Limitador de FPS para leitura de entrada (simula fonte de dados com taxa fixa).
 -   `dataset/compare.sh`: Compara a qualidade de diferentes arquivos de vídeo em relação a um arquivo de referência usando SSIM.
 -   `build-ffmpeg.md`: Guia para compilar o FFmpeg com os codecs necessários.
 
@@ -62,13 +63,14 @@ O benchmark utiliza **três perfis de configuração de threads** para avaliar d
 **Uso:**
 
 ```bash
-./transcode.sh -i <video_de_entrada> -r <arquivo_de_resultados_csv> -e <encoder> [-o <diretorio_de_saida>] [-w]
+./transcode.sh -i <video_de_entrada> -r <arquivo_de_resultados_csv> -e <encoder> [-o <diretorio_de_saida>] [-f <fps>] [-w]
 ```
 
 -   `-i`: Caminho para o vídeo de entrada.
 -   `-r`: Nome do arquivo CSV onde os resultados do benchmark serão salvos.
 -   `-e`: Nome do encoder a ser utilizado (ex: `mjpeg`, `libsvtjpegxs`, `lz4`, `lz4hc`).
 -   `-o`: (Opcional) Diretório onde os vídeos transcodificados serão salvos. O padrão é o diretório atual.
+-   `-f`: (Opcional) FPS alvo para limitar a taxa de leitura dos frames de entrada (simula uma fonte com taxa fixa, ex: câmera a 30 fps). O padrão é sem limite (throughput máximo).
 -   `-w`: (Opcional) Habilita escrita de arquivos de saída. **Padrão: desabilitado** (benchmark puro sem I/O de disco).
 
 **Exemplo:**
@@ -79,6 +81,9 @@ O benchmark utiliza **três perfis de configuração de threads** para avaliar d
 
 # Com escrita de arquivos habilitada
 ./transcode.sh -i video.mp4 -r resultados_transcode.csv -e mjpeg -o ./output_transcode -w
+
+# Com limite de 30 FPS na entrada (simula câmera)
+./transcode.sh -i video.mp4 -r resultados_30fps.csv -e lz4 -f 30 -o ./output_transcode
 ```
 
 ### 3. Decodificar um Vídeo (`decode.sh`)
@@ -100,13 +105,14 @@ O benchmark de decodificação utiliza os **mesmos três perfis de configuraçã
 **Uso:**
 
 ```bash
-./decode.sh -i <video_de_entrada> -r <arquivo_de_resultados_csv> [-o <diretorio_de_saida>] [-l <algoritmo_lz>] [-w]
+./decode.sh -i <video_de_entrada> -r <arquivo_de_resultados_csv> [-o <diretorio_de_saida>] [-l <algoritmo_lz>] [-f <fps>] [-w]
 ```
 
 -   `-i`: Caminho para o vídeo de entrada a ser decodificado.
 -   `-r`: Nome do arquivo CSV onde os resultados do benchmark serão salvos.
 -   `-o`: (Opcional) Diretório onde o vídeo decodificado (YUV) será salvo. O padrão é o diretório atual.
 -   `-l`: (Opcional) Descompacta vídeo usando `lz4` ou `lz4hc` quando este foi compactado usando um desses métodos.
+-   `-f`: (Opcional) FPS alvo para limitar a taxa de leitura dos frames de entrada. O padrão é sem limite (throughput máximo).
 -   `-w`: (Opcional) Habilita escrita de arquivos de saída. **Padrão: desabilitado** (benchmark puro sem I/O de disco).
 
 **Exemplo:**
@@ -117,6 +123,9 @@ O benchmark de decodificação utiliza os **mesmos três perfis de configuraçã
 
 # Com escrita de arquivos habilitada
 ./decode.sh -i video.mp4 -r resultados_decode.csv -o ./output_decode -w
+
+# Decodificação LZ4 com limite de 30 FPS
+./decode.sh -i video.lz4 -r resultados_decode_lz4.csv -l lz4 -f 30 -o ./output_decode
 ```
 
 ### 4. Comparar Vídeos (`dataset/compare.sh`)
@@ -150,7 +159,7 @@ Além dos scripts `transcode.sh` e `decode.sh`, cada benchmark pode ser compilad
 #### MJPEG (ou outros encoders FFmpeg)
 
 ```bash
-gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
+gcc -O3 -Wall -Wno-unused-variable src/transcode.c src/fps_limiter.c -o transcode \
     -I/usr/local/include -L/usr/local/lib \
     -lavcodec -lavutil -lavformat -lm
 
@@ -158,6 +167,9 @@ gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
 
 # Com escrita habilitada
 ./transcode -i video.mp4 -o output.mjpeg -e mjpeg -p balanced -D 8 -E 8 -w
+
+# Com limite de 30 FPS na entrada
+./transcode -i video.mp4 -o output.mjpeg -e mjpeg -p balanced -D 8 -E 8 -f 30
 ```
 
 **Parâmetros do binário `transcode`:**
@@ -170,6 +182,7 @@ gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
 | `-p` | Nome do perfil |
 | `-D` | Threads decodificadoras (default: 0 = auto) |
 | `-E` | Threads codificadoras (default: 0 = auto) |
+| `-f <fps>` | FPS alvo para limitar leitura de entrada (default: sem limite) |
 | `-w` | Habilita escrita do arquivo de saída (default: desabilitado) |
 
 ### Transcodificação — LZ4/LZ4HC (`src/transcode_lz4/`)
@@ -181,6 +194,7 @@ gcc -O3 -Wall -Wno-unused-variable \
     src/transcode_lz4/transcode_lz4_mt.c \
     src/queue.c \
     src/cpu_stats.cpp \
+    src/fps_limiter.c \
     -o transcode_mt \
     -I/usr/local/include -L/usr/local/lib \
     -lavcodec -lavutil -lavformat -lm -llz4 -lpthread
@@ -189,6 +203,9 @@ gcc -O3 -Wall -Wno-unused-variable \
 
 # Com escrita habilitada
 ./transcode_mt -i video.mp4 -o output.lz4 -e lz4 -l 1 -p balanced -D 8 -E 8 -w
+
+# Com limite de 30 FPS na entrada
+./transcode_mt -i video.mp4 -o output.lz4 -e lz4 -l 1 -p balanced -D 8 -E 8 -f 30
 ```
 
 **Parâmetros do binário `transcode_mt`:**
@@ -202,6 +219,7 @@ gcc -O3 -Wall -Wno-unused-variable \
 | `-p` | Nome do perfil |
 | `-D` | Threads decodificadoras FFmpeg (default: 0 = auto) |
 | `-E` | Threads codificadoras LZ4 (1 = single-thread, >1 = multithread) |
+| `-f <fps>` | FPS alvo para limitar leitura de entrada (default: sem limite) |
 | `-w` | Habilita escrita do arquivo de saída (default: desabilitado) |
 
 ### Decodificação — FFmpeg (`src/decode.cpp` + MJPEG MT)
@@ -209,6 +227,7 @@ gcc -O3 -Wall -Wno-unused-variable \
 ```bash
 g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
     src/decode.cpp src/decode_mjpeg_mt.cpp src/queue.c src/cpu_stats.cpp \
+    src/fps_limiter.c \
     -o decode -I/usr/local/include -L/usr/local/lib \
     -lavcodec -lavutil -lavformat -lm -lpthread
 
@@ -216,6 +235,9 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 
 # Com escrita habilitada
 ./decode -i video.mp4 -o output.yuv -p balanced -D 4 -w
+
+# Com limite de 30 FPS na entrada
+./decode -i video.mp4 -o output.yuv -p balanced -D 4 -f 30
 ```
 
 **Parâmetros do binário `decode`:**
@@ -226,6 +248,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 | `-o` | Arquivo YUV de saída |
 | `-p` | Nome do perfil |
 | `-D` | Threads decodificadoras FFmpeg (default: 0 = auto) |
+| `-f <fps>` | FPS alvo para limitar leitura de entrada (default: sem limite) |
 | `-w` | Habilita escrita do arquivo de saída (default: desabilitado) |
 
 ### Decodificação — LZ4 Multithread (`src/decode_lz4/`)
@@ -236,6 +259,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
     src/decode_lz4/frame_reader.cpp src/decode_lz4/frame_decoder.cpp \
     src/decode_lz4/frame_writer.cpp src/decode_lz4/stats.cpp \
     src/queue.c src/cpu_stats.cpp \
+    src/fps_limiter.c \
     -o decode_lz4 -I/usr/local/include -L/usr/local/lib \
     -lavutil -lm -llz4 -lpthread
 
@@ -243,6 +267,9 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 
 # Com escrita habilitada
 ./decode_lz4 -i video.lz4 -o output.yuv -p balanced -D 8 -w
+
+# Com limite de 30 FPS na entrada
+./decode_lz4 -i video.lz4 -o output.yuv -p balanced -D 8 -f 30
 ```
 
 **Parâmetros do binário `decode_lz4`:**
@@ -253,6 +280,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 | `-o` | Arquivo YUV de saída |
 | `-p` | Nome do perfil |
 | `-D` | Threads decodificadoras (default: 1) |
+| `-f <fps>` | FPS alvo para limitar leitura de entrada (default: sem limite) |
 | `-w` | Habilita escrita do arquivo de saída (default: desabilitado) |
 
 ### Opções de CLI para Threads
@@ -261,6 +289,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
 |-------|---------|-----------|
 | `-D <N>` | 0 (auto) | Threads decodificadoras |
 | `-E <N>` | 0 (auto) / 1 | Threads codificadoras |
+| `-f <fps>` | 0 (sem limite) | FPS alvo para limitar leitura de entrada |
 
 ## Formato dos Arquivos de Resultados
 
