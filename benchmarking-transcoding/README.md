@@ -136,6 +136,153 @@ Este script compara um ou mais arquivos de vídeo com um arquivo de referência 
 ./dataset/compare.sh 3840x2160 original.yuv h264 3840x2160_avc.mp4 hevc 3840x2160_hevc.mp4
 ```
 
+## Compilação e Execução Individual
+
+Além dos scripts `transcode.sh` e `decode.sh`, cada benchmark pode ser compilado e executado manualmente. Abaixo estão os comandos para cada binário.
+
+> **Nota:** Antes de executar, exporte o caminho das bibliotecas: `export LD_LIBRARY_PATH="/usr/local/lib"`
+
+### Transcodificação — Single-thread (`src/transcode.c`)
+
+#### LZ4
+
+```bash
+gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
+    -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
+    -DTHREADS_IN=1 -DTHREADS_OUT=1 -DUSE_LZ_COMPRESS -DLZ_CONFIG=1
+
+./transcode -i video.mp4 -o output.lz4 -e lz4 -p low_latency
+```
+
+#### LZ4HC (nível de compressão 9)
+
+```bash
+gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
+    -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
+    -DTHREADS_IN=1 -DTHREADS_OUT=1 -DUSE_LZ_COMPRESS -DLZ_CONFIG=9
+
+./transcode -i video.mp4 -o output.lz4 -e lz4hc -p low_latency
+```
+
+#### MJPEG (ou outros encoders FFmpeg)
+
+```bash
+gcc -O3 -Wall -Wno-unused-variable src/transcode.c -o transcode \
+    -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm -llz4 -llzo2 \
+    -DTHREADS_IN=8 -DTHREADS_OUT=8
+
+./transcode -i video.mp4 -o output.mjpeg -e mjpeg -p balanced
+```
+
+**Parâmetros do binário `transcode`:**
+
+| Parâmetro | Descrição |
+|-----------|-----------|
+| `-i` | Arquivo de vídeo de entrada |
+| `-o` | Arquivo de saída |
+| `-e` | Encoder: `lz4`, `lz4hc`, `mjpeg`, `libsvtjpegxs`, etc. |
+| `-p` | Nome do perfil |
+
+### Transcodificação — LZ4/LZ4HC Multithread (`src/transcode_lz4/`)
+
+```bash
+gcc -O3 -Wall -Wno-unused-variable \
+    -DTHREADS_IN=8 -DTHREADS_OUT=8 \
+    src/transcode_lz4/transcode_lz4_main.c \
+    src/transcode_lz4/transcode_lz4_mt.c \
+    src/queue.c \
+    src/cpu_stats.cpp \
+    -o transcode_mt \
+    -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm -llz4 -lpthread
+
+./transcode_mt -i video.mp4 -o output.lz4 -e lz4 -l 1 -p balanced
+```
+
+**Parâmetros do binário `transcode_mt`:**
+
+| Parâmetro | Descrição |
+|-----------|-----------|
+| `-i` | Arquivo de vídeo de entrada |
+| `-o` | Arquivo de saída |
+| `-e` | Encoder: `lz4` ou `lz4hc` |
+| `-l` | Nível de compressão (1–12; para LZ4 controla aceleração, para LZ4HC controla compressão) |
+| `-p` | Nome do perfil |
+
+### Decodificação — FFmpeg (`src/decode.cpp`)
+
+```bash
+g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
+    src/decode.cpp src/cpu_stats.cpp -o decode \
+    -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm
+
+./decode -i video.mp4 -o output.yuv -p balanced
+```
+
+**Parâmetros do binário `decode`:**
+
+| Parâmetro | Descrição |
+|-----------|-----------|
+| `-i` | Arquivo de vídeo de entrada |
+| `-o` | Arquivo YUV de saída |
+| `-p` | Nome do perfil |
+
+### Decodificação — LZ4 Multithread (`src/decode_lz4/`)
+
+```bash
+g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
+    src/decode_lz4/decode_lz4_main.cpp src/decode_lz4/decode_lz4_mt.cpp \
+    src/decode_lz4/frame_reader.cpp src/decode_lz4/frame_decoder.cpp \
+    src/decode_lz4/frame_writer.cpp src/decode_lz4/stats.cpp \
+    src/queue.c src/cpu_stats.cpp \
+    -o decode_lz4 -I/usr/local/include -L/usr/local/lib \
+    -lavutil -lm -llz4 -lpthread
+
+./decode_lz4 -i video.lz4 -o output.yuv -p balanced -t 8
+```
+
+**Parâmetros do binário `decode_lz4`:**
+
+| Parâmetro | Descrição |
+|-----------|-----------|
+| `-i` | Arquivo `.lz4` de entrada |
+| `-o` | Arquivo YUV de saída |
+| `-p` | Nome do perfil |
+| `-t` | Número de threads de descompressão |
+
+### Habilitando Escrita de Arquivos
+
+Todos os binários suportam escrita de arquivos de saída via macro de compilação. Adicione `-DENABLE_OUTPUT_WRITE=1` na linha de compilação:
+
+```bash
+# Exemplo: transcode_mt com escrita habilitada
+gcc -O3 -Wall -Wno-unused-variable \
+    -DTHREADS_IN=8 -DTHREADS_OUT=8 -DENABLE_OUTPUT_WRITE=1 \
+    src/transcode_lz4/transcode_lz4_main.c \
+    src/transcode_lz4/transcode_lz4_mt.c \
+    src/queue.c \
+    src/cpu_stats.cpp \
+    -o transcode_mt \
+    -I/usr/local/include -L/usr/local/lib \
+    -lavcodec -lavutil -lavformat -lm -llz4 -lpthread
+```
+
+Sem essa flag, os binários executam o benchmark em modo puro (sem I/O de disco), gerando arquivos de saída com tamanho zero.
+
+### Macros de Compilação
+
+| Macro | Valor | Descrição |
+|-------|-------|-----------|
+| `THREADS_IN` | `1`, `4`, `8`, `16` | Número de threads de decodificação |
+| `THREADS_OUT` | `1`, `8`, `16` | Número de threads de codificação |
+| `USE_LZ_COMPRESS` | — | Habilita compressão LZ4 no single-thread |
+| `LZ_CONFIG` | `1`–`12` | Nível de aceleração (LZ4) ou compressão (LZ4HC) |
+| `ENABLE_OUTPUT_WRITE` | `0`/`1` | Habilita escrita de arquivos de saída |
+
 ## Formato dos Arquivos de Resultados
 
 Os scripts de benchmark geram arquivos CSV com os seguintes formatos:
