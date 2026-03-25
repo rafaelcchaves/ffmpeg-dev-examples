@@ -22,12 +22,12 @@
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/time.h>
-#include <libavutil/buffer.h>
 #include <libavutil/pixdesc.h>
 #include <lz4.h>
 #include <lz4hc.h>
 
-#include "../avbuffer_queue.h"
+#include "../frame_types.h"
+#include "../queue.h"
 
 // ============================================================================
 // Constantes
@@ -39,31 +39,6 @@
 // ============================================================================
 // Estruturas de Dados
 // ============================================================================
-
-/**
- * @brief Header do frame no arquivo compactado
- *
- * Compatível com decode_lz4 para round-trip.
- */
-typedef struct {
-    int32_t size_decompress;  /**< Tamanho original dos dados */
-    int32_t size_compress;    /**< Tamanho após compressão */
-    int32_t width;            /**< Largura do frame */
-    int32_t height;           /**< Altura do frame */
-    int32_t pix_fmt;          /**< Pixel format (AVPixelFormat) */
-} FrameHeader;
-
-/**
- * @brief Informações do frame para codificação
- *
- * Armazenado em fila paralela à AVBufferQueue para manter
- * metadata junto com o buffer.
- */
-typedef struct {
-    int sequence_number;      /**< Número sequencial do frame (para escrita ordenada) */
-    FrameHeader header;       /**< Metadata do frame */
-    AVBufferRef* buffer;      /**< Buffer com dados descomprimidos (ownership) */
-} EncodeFrameInfo;
 
 /**
  * @brief Contexto da thread codificadora
@@ -91,8 +66,8 @@ typedef struct {
 // Variáveis Globais
 // ============================================================================
 
-/** Fila unificada de frames (buffer + metadata) */
-extern FrameQueue g_frame_queue;
+/** Fila de frames (generica com FrameItem) */
+extern Queue g_frame_queue;
 
 /** Controle de escrita sequencial */
 extern size_t g_next_to_write;

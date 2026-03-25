@@ -8,7 +8,7 @@ Este projeto implementa um sistema de benchmarking para transcodificação e dec
 
 - **Transcodificação**: Suporte a MJPEG, JPEG XS, LZ4 e LZ4HC
 - **Decodificação**: FFmpeg padrão e LZ4 multithread
-- **Arquitetura Multithread**: Producer-consumer com semáforos
+- **Arquitetura Multithread**: Producer-consumer com fila genérica (Queue)
 - **Flag de Escrita**: Permite benchmarks sem I/O de disco (padrão)
 - **Perfis de Threads**: low_latency, balanced, high_throughput
 
@@ -17,6 +17,8 @@ Este projeto implementa um sistema de benchmarking para transcodificação e dec
 ```
 benchmarking-transcoding/
 ├── src/
+│   ├── frame_types.h            # Tipos compartilhados (FrameHeader, FrameItem)
+│   ├── queue.h / queue.c        # Fila genérica thread-safe com ownership
 │   ├── transcode.c              # Transcodificação single-thread
 │   ├── decode.cpp               # Decodificação FFmpeg
 │   ├── transcode_lz4/           # Transcodificação LZ4 multithread
@@ -27,8 +29,8 @@ benchmarking-transcoding/
 │   │   ├── decode_lz4_mt.cpp
 │   │   ├── frame_reader.cpp
 │   │   ├── frame_decoder.cpp
-│   │   └── frame_writer.cpp
-│   ├── avbuffer_queue.c         # Fila thread-safe
+│   │   ├── frame_writer.cpp
+│   │   └── stats.cpp
 │   └── cpu_stats.cpp            # Coleta de uso de CPU
 ├── dataset/                     # Vídeos de teste
 ├── results/                     # Scripts de análise
@@ -37,6 +39,49 @@ benchmarking-transcoding/
 ├── transcode.sh                 # Script de benchmark de transcodificação
 └── decode.sh                    # Script de benchmark de decodificação
 ```
+
+### Arquitetura Multithread
+
+O sistema multithread utiliza uma arquitetura **producer-consumer** com uma fila genérica thread-safe (`Queue`) que transporta `FrameItem` entre threads.
+
+```
+Encode path:
+  Producer (FFmpeg decode)  →  Queue<FrameItem>  →  Consumers (LZ4/LZ4HC compress)
+
+Decode path:
+  Producer (file reader)    →  Queue<FrameItem>  →  Consumers (LZ4 decompress)
+```
+
+#### Tipos Compartilhados (`src/frame_types.h`)
+
+| Tipo | Descrição |
+|------|-----------|
+| `FrameHeader` | Header on-disk de 20 bytes (size_decompress, size_compress, width, height, pix_fmt) |
+| `FrameItem` | Item unificado para a fila (header + sequence_number + timestamp + AVBufferRef* data) |
+| `frame_item_free()` | Libera um FrameItem e seu AVBufferRef (callback para Queue) |
+
+- **Encode**: `FrameItem.data` aponta para pixels YUV brutos; o encoder usa `header.size_decompress`
+- **Decode**: `FrameItem.data` aponta para dados LZ4 comprimidos; o decoder usa `header.size_compress`
+
+#### Fila Genérica (`src/queue.h` / `src/queue.c`)
+
+| Função | Descrição |
+|--------|-----------|
+| `queue_init(q, free_func)` | Inicializa fila com callback de liberação |
+| `queue_destroy(q)` | Destrói fila, liberando itens restantes |
+| `queue_push(q, item)` | Insere item (ownership transferido) |
+| `queue_pop(q)` | Remove item (ownership retornado), bloqueante |
+| `queue_clear(q)` | Limpa todos os itens |
+| `queue_count(q)` | Número de elementos |
+| `queue_is_empty(q)` | Verifica se vazia |
+
+- **Ownership**: `queue_push` transfere ownership; `queue_pop` retorna ownership ao chamador
+- **Poison pill**: `NULL` é aceito como sinal de término (sem chamar `free_func`)
+- **Thread-safety**: Mutex + condition variable internos
+
+#### Escrita Sequencial
+
+Tanto o encode quanto o decode utilizam um mecanismo de **escrita sequencial** (`g_next_to_write` + `g_write_mutex` + `g_write_cond`) para garantir que os frames sejam escritos no arquivo em ordem, mesmo quando processados em paralelo por threads consumidoras.
 
 ---
 
@@ -107,7 +152,7 @@ gcc -O3 -Wall -Wno-unused-variable \
     -DTHREADS_IN=8 -DTHREADS_OUT=8 \
     src/transcode_lz4/transcode_lz4_main.c \
     src/transcode_lz4/transcode_lz4_mt.c \
-    src/avbuffer_queue.c \
+    src/queue.c \
     src/cpu_stats.cpp \
     -o transcode_mt \
     -I/usr/local/include -L/usr/local/lib \
@@ -118,7 +163,7 @@ gcc -O3 -Wall -Wno-unused-variable \
     -DTHREADS_IN=8 -DTHREADS_OUT=8 -DENABLE_OUTPUT_WRITE=1 \
     src/transcode_lz4/transcode_lz4_main.c \
     src/transcode_lz4/transcode_lz4_mt.c \
-    src/avbuffer_queue.c \
+    src/queue.c \
     src/cpu_stats.cpp \
     -o transcode_mt \
     -I/usr/local/include -L/usr/local/lib \
@@ -155,7 +200,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
     src/decode_lz4/decode_lz4_main.cpp src/decode_lz4/decode_lz4_mt.cpp \
     src/decode_lz4/frame_reader.cpp src/decode_lz4/frame_decoder.cpp \
     src/decode_lz4/frame_writer.cpp src/decode_lz4/stats.cpp \
-    src/cpu_stats.cpp \
+    src/queue.c src/cpu_stats.cpp \
     -o decode_lz4 -I/usr/local/include -L/usr/local/lib \
     -lavutil -lm -llz4 -lpthread
 
@@ -165,7 +210,7 @@ g++ -O3 -Wall -Wno-unused-variable -Wno-unused-function \
     src/decode_lz4/decode_lz4_main.cpp src/decode_lz4/decode_lz4_mt.cpp \
     src/decode_lz4/frame_reader.cpp src/decode_lz4/frame_decoder.cpp \
     src/decode_lz4/frame_writer.cpp src/decode_lz4/stats.cpp \
-    src/cpu_stats.cpp \
+    src/queue.c src/cpu_stats.cpp \
     -o decode_lz4 -I/usr/local/include -L/usr/local/lib \
     -lavutil -lm -llz4 -lpthread
 ```

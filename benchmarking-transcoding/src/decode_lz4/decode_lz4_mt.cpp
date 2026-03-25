@@ -1,6 +1,6 @@
 // ============================================================================
 // decode_lz4_mt.cpp - Decodificador LZ4 Multithread
-// Arquitetura: Buffer Compartilhado com Semáforo
+// Arquitetura: Fila Generica (Queue + FrameItem)
 // ============================================================================
 
 #include "decode_lz4.h"
@@ -21,17 +21,8 @@
 // Definição das variáveis globais
 // ============================================================================
 
-// Buffer compartilhado (produtor <-> consumidores)
-char *g_shared_buffer = NULL;
-SharedFrameInfo g_shared_frame_info;
-int g_shared_buffer_size = 0;
-
-// Semáforos para sincronização do buffer compartilhado
-sem_t g_sem_empty;  // Sinaliza que buffer está vazio (produtor pode escrever)
-sem_t g_sem_full;   // Sinaliza que buffer tem dados (consumidor pode ler)
-
-// Mutex para proteger acesso às info do frame compartilhado
-pthread_mutex_t g_shared_info_mutex = PTHREAD_MUTEX_INITIALIZER;
+// Fila de frames (generica com FrameItem)
+Queue g_frame_queue;
 
 // Controle de escrita sequencial no arquivo de saída
 size_t g_next_to_write = 0;
@@ -66,30 +57,8 @@ std::atomic<int> g_decode_frame_count{0};
 // Funções de Inicialização
 // ============================================================================
 
-int mt_initialize_shared_buffer(int buffer_size) {
-    g_shared_buffer = (char *)malloc(buffer_size);
-    if (!g_shared_buffer) {
-        fprintf(stderr, "Erro: Nao foi possivel alocar buffer compartilhado de %d bytes\n", buffer_size);
-        return -1;
-    }
-    g_shared_buffer_size = buffer_size;
-    return 0;
-}
-
 int mt_initialize_synchronization() {
-    // Semáforo "empty" inicializado com 1 (buffer vazio, produtor pode escrever)
-    if (sem_init(&g_sem_empty, 0, 1) < 0) {
-        perror("Erro ao inicializar semaforo empty");
-        return -1;
-    }
-
-    // Semáforo "full" inicializado com 0 (buffer sem dados, consumidores aguardam)
-    if (sem_init(&g_sem_full, 0, 0) < 0) {
-        perror("Erro ao inicializar semaforo full");
-        sem_destroy(&g_sem_empty);
-        return -1;
-    }
-
+    // Sincronização agora é gerenciada pela Queue (mutex + cond internos)
     return 0;
 }
 
@@ -111,18 +80,8 @@ int mt_initialize_state(FILE *input_file) {
 // Funções de Limpeza
 // ============================================================================
 
-void mt_cleanup_shared_buffer() {
-    if (g_shared_buffer) {
-        free(g_shared_buffer);
-        g_shared_buffer = NULL;
-    }
-    g_shared_buffer_size = 0;
-}
-
 void mt_cleanup_synchronization() {
-    sem_destroy(&g_sem_empty);
-    sem_destroy(&g_sem_full);
-    pthread_mutex_destroy(&g_shared_info_mutex);
+    // Sincronização agora é gerenciada pela Queue
 }
 
 void mt_cleanup_write_control() {
@@ -140,25 +99,7 @@ void mt_cleanup_state() {
 void *mt_producer_thread(void *arg) {
     (void)arg;  // Não usado
 
-    char *producer_buffer = NULL;
-    int max_frame_size = 0;
     int sequence_number = 0;
-    int first_frame = 1;
-
-    // Aloca buffer privativo do produtor
-    max_frame_size = LZ4_compressBound(1920 * 1080 * 3);  // Estimativa conservadora
-    producer_buffer = (char *)malloc(max_frame_size);
-    if (!producer_buffer) {
-        fprintf(stderr, "[Producer] Erro: Nao foi possivel alocar buffer privativo\n");
-        pthread_mutex_lock(&g_state_mutex);
-        g_producer_finished = true;
-        pthread_mutex_unlock(&g_state_mutex);
-        // Acorda consumidores para encerrar
-        for (int i = 0; i < g_num_decoder_threads; i++) {
-            sem_post(&g_sem_full);
-        }
-        return NULL;
-    }
 
     // Loop principal de leitura
     while (1) {
@@ -178,50 +119,54 @@ void *mt_producer_thread(void *arg) {
             break;
         }
 
-        // 2. Verificar se precisa realocar buffer
-        if (header.size_compress > max_frame_size) {
-            free(producer_buffer);
-            max_frame_size = header.size_compress + 1024;
-            producer_buffer = (char *)malloc(max_frame_size);
-            if (!producer_buffer) {
-                fprintf(stderr, "[Producer] Erro: Nao foi possivel realocar buffer\n");
-                break;
-            }
+        // 2. Alocar e ler dados compactados
+        char *comp_data = (char *)malloc(header.size_compress);
+        if (!comp_data) {
+            fprintf(stderr, "[Producer] Erro: Nao foi possivel alocar buffer para frame %d\n", sequence_number);
+            break;
         }
 
-        // 3. Ler dados compactados para buffer privativo
-        ret = fread(producer_buffer, 1, header.size_compress, g_input_file);
+        ret = fread(comp_data, 1, header.size_compress, g_input_file);
         if (ret != header.size_compress) {
             fprintf(stderr, "[Producer] Erro: Arquivo terminou antes do esperado\n");
+            free(comp_data);
             break;
         }
 
         int64_t read_time = av_gettime() - read_start;
 
-        // 3a. Acumular métricas de leitura
+        // 2a. Acumular métricas de leitura
         g_total_read_time += read_time;
         g_read_frame_count++;
 
-        // 3b. Imprimir métrica de leitura se debug mode
+        // 2b. Imprimir métrica de leitura se debug mode
         if (g_debug_mode) {
             printf("[METRICA] READ_FRAME %d %ld\n", sequence_number, read_time);
         }
 
-        // 4. Aguarda buffer compartilhado estar vazio
-        sem_wait(&g_sem_empty);
+        // 3. Cria AVBufferRef com os dados comprimidos
+        AVBufferRef *buffer = av_buffer_create((uint8_t *)comp_data, header.size_compress,
+                                               av_buffer_default_free, NULL, 0);
+        if (!buffer) {
+            fprintf(stderr, "[Producer] Erro: Nao foi possivel criar AVBufferRef\n");
+            free(comp_data);
+            break;
+        }
 
-        // 5. Copia do buffer privativo para buffer compartilhado
-        memcpy(g_shared_buffer, producer_buffer, header.size_compress);
+        // 4. Cria FrameItem e push na fila
+        FrameItem *fi = (FrameItem *)malloc(sizeof(FrameItem));
+        if (!fi) {
+            fprintf(stderr, "[Producer] Erro: Nao foi possivel alocar FrameItem %d\n", sequence_number);
+            av_buffer_unref(&buffer);
+            break;
+        }
+        fi->header = header;
+        fi->sequence_number = sequence_number;
+        fi->timestamp = av_gettime();  // Momento da leitura do frame
+        fi->data = buffer;
 
-        // 6. Atualiza info do frame compartilhado
-        pthread_mutex_lock(&g_shared_info_mutex);
-        g_shared_frame_info.sequence_number = sequence_number;
-        g_shared_frame_info.header = header;
-        g_shared_frame_info.data_size = header.size_compress;
-        pthread_mutex_unlock(&g_shared_info_mutex);
-
-        // 7. Sinaliza que dados estão disponíveis
-        sem_post(&g_sem_full);
+        queue_push(&g_frame_queue, fi);
+        // fi ownership transferido para a fila
 
         sequence_number++;
     }
@@ -232,19 +177,9 @@ void *mt_producer_thread(void *arg) {
     g_total_frames_processed = sequence_number;
     pthread_mutex_unlock(&g_state_mutex);
 
-    // Modo de finalização: aguarda cada thread liberar o buffer e envia sinal de EOF
-    int shutdown_signals_sent = 0;
-    while (shutdown_signals_sent < g_num_decoder_threads) {
-        sem_wait(&g_sem_empty);  // Aguarda alguma thread liberar o buffer
-
-        pthread_mutex_lock(&g_shared_info_mutex);
-        g_shared_frame_info.sequence_number = -1;  // Marcador de encerramento
-        g_shared_frame_info.data_size = 0;         // Tamanho zero = sinal de EOF
-        pthread_mutex_unlock(&g_shared_info_mutex);
-
-        sem_post(&g_sem_full);  // Envia sinal para a thread
-
-        shutdown_signals_sent++;
+    // Envia poison pills para cada thread decodificadora
+    for (int i = 0; i < g_num_decoder_threads; i++) {
+        queue_push(&g_frame_queue, NULL);
     }
 
     // Aguarda todas as threads decodificadoras terminarem ANTES de liberar recursos
@@ -253,9 +188,6 @@ void *mt_producer_thread(void *arg) {
         pthread_cond_wait(&g_active_threads_cond, &g_active_threads_mutex);
     }
     pthread_mutex_unlock(&g_active_threads_mutex);
-
-    // Limpeza
-    free(producer_buffer);
 
     return NULL;
 }
@@ -275,83 +207,73 @@ void *mt_decoder_thread(void *arg) {
 
     // Loop principal
     while (1) {
-        SharedFrameInfo local_frame_info;
+        // 1. Pop da fila (bloqueante)
+        FrameItem *fi = (FrameItem *)queue_pop(&g_frame_queue);
 
-        // 1. Aguarda dados disponíveis no buffer compartilhado
-        sem_wait(&g_sem_full);
-
-        // 2. Copia info do frame (seção crítica pequena)
-        pthread_mutex_lock(&g_shared_info_mutex);
-        local_frame_info = g_shared_frame_info;
-        pthread_mutex_unlock(&g_shared_info_mutex);
-
-        // 3. Verifica se é sinal de encerramento (tamanho zero ou sequence -1)
-        if (local_frame_info.data_size == 0 || local_frame_info.sequence_number == -1) {
-            sem_post(&g_sem_empty);  // Libera o buffer para o próximo sinal
+        // 2. Verifica poison pill (NULL)
+        if (!fi) {
             break;
         }
 
-        // 4. Copia do buffer compartilhado para buffer privativo
-        memcpy(ctx->compressed_buffer, g_shared_buffer, local_frame_info.data_size);
-
-        // 5. Libera buffer compartilhado para o produtor
-        sem_post(&g_sem_empty);
-
-        // 6. Decodificação (processamento paralelo, sem locks)
+        // 3. Decodificação (processamento paralelo, sem locks)
         int64_t decode_start = av_gettime();
 
         int decompressed_size = LZ4_decompress_safe(
-            ctx->compressed_buffer,
+            (const char *)fi->data->data,
             (char *)ctx->decode_ctx.image_data[0],
-            local_frame_info.data_size,
-            ctx->max_compressed_size
+            fi->header.size_compress,
+            ctx->decode_ctx.max_capacity
         );
 
         if (decompressed_size < 0) {
             fprintf(stderr, "[Decoder %d] Erro na decodificacao do frame %d\n",
-                    thread_id, local_frame_info.sequence_number);
+                    thread_id, fi->sequence_number);
+            frame_item_free(fi);
             continue;
         }
 
         int64_t decode_time = av_gettime() - decode_start;
 
-        // 6a. Acumular métricas de decodificação
+        // 3a. Acumular métricas de decodificação
         g_total_decode_time += decode_time;
         g_decode_frame_count++;
 
-        // 6b. Imprimir métrica de decodificação se debug mode
+        // 3b. Imprimir métrica de decodificação se debug mode
         if (g_debug_mode) {
-            printf("[METRICA] DECODE_FRAME %d %ld\n", local_frame_info.sequence_number, decode_time);
+            printf("[METRICA] DECODE_FRAME %d %ld\n", fi->sequence_number, decode_time);
         }
 
-        // 7. Aguarda sua vez de escrever (escrita sequencial)
+        // 4. Aguarda sua vez de escrever (escrita sequencial)
         pthread_mutex_lock(&g_write_mutex);
 
-        while ((int)g_next_to_write != local_frame_info.sequence_number) {
+        while ((int)g_next_to_write != fi->sequence_number) {
             pthread_cond_wait(&g_write_cond, &g_write_mutex);
         }
 
-        // 8. Escreve frame no arquivo
+        // 5. Escreve frame no arquivo
 #if ENABLE_OUTPUT_WRITE
         size_t written = fwrite(ctx->decode_ctx.image_data[0], 1,
-                                local_frame_info.header.size_decompress, g_output_file);
-        if (written != (size_t)local_frame_info.header.size_decompress) {
+                                fi->header.size_decompress, g_output_file);
+        if (written != (size_t)fi->header.size_decompress) {
             fprintf(stderr, "[Decoder %d] Erro ao escrever frame %d\n",
-                    thread_id, local_frame_info.sequence_number);
+                    thread_id, fi->sequence_number);
         }
 #else
         (void)thread_id;  // Avoid unused warning
 #endif
 
-        // 9. Atualiza contador e acorda outras threads
+        // 6. Atualiza contador e acorda outras threads
         g_next_to_write++;
         pthread_mutex_unlock(&g_write_mutex);
         pthread_cond_broadcast(&g_write_cond);
 
-        // 10. Imprime estatísticas (apenas se não estiver em modo debug)
+        // 7. Imprime estatísticas (apenas se não estiver em modo debug)
         if (!g_debug_mode) {
             stats_print_frame(g_profile_name.c_str(), g_num_decoder_threads, decode_time);
         }
+
+        // 8. Libera FrameItem
+        frame_item_free(fi);
     }
 
     // Decrementa contador de threads ativas e acorda produtor se necessário
@@ -419,9 +341,8 @@ int mt_decode_main(int num_threads, const std::string &input_file,
     // Volta para o início do arquivo
     rewind(g_input_file);
 
-    // Inicializa buffer compartilhado
-    int shared_buffer_size = LZ4_compressBound(first_header.size_decompress);
-    if (mt_initialize_shared_buffer(shared_buffer_size) < 0) {
+    // Inicializa fila generica com frame_item_free como callback
+    if (queue_init(&g_frame_queue, frame_item_free) < 0) {
         fclose(g_input_file);
 #if ENABLE_OUTPUT_WRITE
         if (g_output_file) fclose(g_output_file);
@@ -429,9 +350,9 @@ int mt_decode_main(int num_threads, const std::string &input_file,
         return -1;
     }
 
-    // Inicializa sincronização
+    // Inicializa sincronização (stub — gerenciada pela Queue)
     if (mt_initialize_synchronization() < 0) {
-        mt_cleanup_shared_buffer();
+        queue_destroy(&g_frame_queue);
         fclose(g_input_file);
 #if ENABLE_OUTPUT_WRITE
         if (g_output_file) fclose(g_output_file);
@@ -442,7 +363,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
     // Inicializa controle de escrita
     if (mt_initialize_write_control(g_output_file) < 0) {
         mt_cleanup_synchronization();
-        mt_cleanup_shared_buffer();
+        queue_destroy(&g_frame_queue);
         fclose(g_input_file);
 #if ENABLE_OUTPUT_WRITE
         if (g_output_file) fclose(g_output_file);
@@ -454,7 +375,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
     if (mt_initialize_state(g_input_file) < 0) {
         mt_cleanup_write_control();
         mt_cleanup_synchronization();
-        mt_cleanup_shared_buffer();
+        queue_destroy(&g_frame_queue);
         fclose(g_input_file);
 #if ENABLE_OUTPUT_WRITE
         if (g_output_file) fclose(g_output_file);
@@ -473,7 +394,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
         mt_cleanup_state();
         mt_cleanup_write_control();
         mt_cleanup_synchronization();
-        mt_cleanup_shared_buffer();
+        queue_destroy(&g_frame_queue);
         fclose(g_input_file);
 #if ENABLE_OUTPUT_WRITE
         if (g_output_file) fclose(g_output_file);
@@ -498,31 +419,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
             mt_cleanup_state();
             mt_cleanup_write_control();
             mt_cleanup_synchronization();
-            mt_cleanup_shared_buffer();
-            fclose(g_input_file);
-#if ENABLE_OUTPUT_WRITE
-            if (g_output_file) fclose(g_output_file);
-#endif
-            return -1;
-        }
-
-        // Aloca buffer comprimido privativo da thread
-        thread_contexts[i].max_compressed_size = LZ4_compressBound(first_header.size_decompress);
-        thread_contexts[i].compressed_buffer = (char *)malloc(thread_contexts[i].max_compressed_size);
-        if (!thread_contexts[i].compressed_buffer) {
-            fprintf(stderr, "Erro: Nao foi possivel alocar buffer comprimido para thread %d\n", i);
-            // Cleanup parcial
-            for (int j = 0; j < i; j++) {
-                free(thread_contexts[j].compressed_buffer);
-                decode_context_free(&thread_contexts[j].decode_ctx);
-            }
-            decode_context_free(&thread_contexts[i].decode_ctx);
-            free(decoder_threads);
-            free(thread_contexts);
-            mt_cleanup_state();
-            mt_cleanup_write_control();
-            mt_cleanup_synchronization();
-            mt_cleanup_shared_buffer();
+            queue_destroy(&g_frame_queue);
             fclose(g_input_file);
 #if ENABLE_OUTPUT_WRITE
             if (g_output_file) fclose(g_output_file);
@@ -539,7 +436,6 @@ int mt_decode_main(int num_threads, const std::string &input_file,
         perror("Erro ao criar thread produtora");
         // Cleanup
         for (int i = 0; i < num_threads; i++) {
-            free(thread_contexts[i].compressed_buffer);
             decode_context_free(&thread_contexts[i].decode_ctx);
         }
         free(decoder_threads);
@@ -547,7 +443,7 @@ int mt_decode_main(int num_threads, const std::string &input_file,
         mt_cleanup_state();
         mt_cleanup_write_control();
         mt_cleanup_synchronization();
-        mt_cleanup_shared_buffer();
+        queue_destroy(&g_frame_queue);
         fclose(g_input_file);
 #if ENABLE_OUTPUT_WRITE
         if (g_output_file) fclose(g_output_file);
@@ -623,11 +519,10 @@ int mt_decode_main(int num_threads, const std::string &input_file,
     mt_cleanup_state();
     mt_cleanup_write_control();
     mt_cleanup_synchronization();
-    mt_cleanup_shared_buffer();
+    queue_destroy(&g_frame_queue);
 
     // 3. Libera contextos das threads (DEPOIS dos cleanups)
     for (int i = 0; i < num_threads; i++) {
-        free(thread_contexts[i].compressed_buffer);
         decode_context_free(&thread_contexts[i].decode_ctx);
     }
     free(decoder_threads);

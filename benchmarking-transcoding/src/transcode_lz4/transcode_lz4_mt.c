@@ -17,8 +17,8 @@
 // Definição das Variáveis Globais
 // ============================================================================
 
-// Fila unificada de frames (buffer + metadata)
-FrameQueue g_frame_queue;
+// Fila de frames (generica com FrameItem)
+Queue g_frame_queue;
 
 // Controle de escrita sequencial
 size_t g_next_to_write = 0;
@@ -57,7 +57,7 @@ volatile int g_frame_count = 0;
 // ============================================================================
 
 int mt_encode_init_queue(void) {
-    return frame_queue_init(&g_frame_queue);
+    return queue_init(&g_frame_queue, frame_item_free);
 }
 
 int mt_encode_init_synchronization(void) {
@@ -122,7 +122,7 @@ int mt_encode_init_state(FILE *output_file) {
 // ============================================================================
 
 void mt_encode_cleanup_queue(void) {
-    frame_queue_destroy(&g_frame_queue);
+    queue_destroy(&g_frame_queue);
 }
 
 void mt_encode_cleanup_synchronization(void) {
@@ -289,8 +289,8 @@ void *mt_producer_thread(void *arg) {
             }
             memcpy(data_copy, frame_data, frame_size);
 
-            // Cria AVBufferRef com os dados
-            AVBufferRef *buffer = av_buffer_create(data_copy, frame_size, NULL, NULL, 0);
+            // Cria AVBufferRef com os dados (av_buffer_default_free libera data_copy no unref)
+            AVBufferRef *buffer = av_buffer_create(data_copy, frame_size, av_buffer_default_free, NULL, 0);
             if (!buffer) {
                 fprintf(stderr, "[Producer] Erro: Não foi possível criar AVBufferRef\n");
                 free(data_copy);
@@ -298,12 +298,25 @@ void *mt_producer_thread(void *arg) {
                 continue;
             }
 
-            // Push único e atômico na fila unificada (buffer + metadata)
-            frame_queue_push(&g_frame_queue, buffer,
-                             sequence_number, frame_size,
-                             frame->width, frame->height, frame->format,
-                             frame->pkt_dts);
-            // buffer ownership transferido para a fila
+            // Cria FrameItem e push na fila
+            FrameItem *fi = (FrameItem *)malloc(sizeof(FrameItem));
+            if (!fi) {
+                fprintf(stderr, "[Producer] Erro: Não foi possível alocar FrameItem %d\n", sequence_number);
+                av_buffer_unref(&buffer);
+                av_frame_unref(frame);
+                continue;
+            }
+            fi->header.size_decompress = frame_size;
+            fi->header.size_compress = 0;  // Definido pelo encoder
+            fi->header.width = frame->width;
+            fi->header.height = frame->height;
+            fi->header.pix_fmt = frame->format;
+            fi->sequence_number = sequence_number;
+            fi->timestamp = frame->pkt_dts;
+            fi->data = buffer;
+
+            queue_push(&g_frame_queue, fi);
+            // fi ownership transferido para a fila
 
             if (g_debug_mode) {
                 printf("[METRICA] DECODE_FRAME %d %ld\n", sequence_number, decode_time);
@@ -352,19 +365,30 @@ void *mt_producer_thread(void *arg) {
         }
         memcpy(data_copy, frame_data, frame_size);
 
-        AVBufferRef *buffer = av_buffer_create(data_copy, frame_size, NULL, NULL, 0);
+        AVBufferRef *buffer = av_buffer_create(data_copy, frame_size, av_buffer_default_free, NULL, 0);
         if (!buffer) {
             free(data_copy);
             av_frame_unref(frame);
             continue;
         }
 
-        // Push único e atômico na fila unificada (buffer + metadata)
-        // Durante flush, pkt_dts = 0 indica que não deve logar latência
-        frame_queue_push(&g_frame_queue, buffer,
-                         sequence_number, frame_size,
-                         frame->width, frame->height, frame->format,
-                         0);
+        // Cria FrameItem e push na fila (flush: timestamp = 0, sem log de latencia)
+        FrameItem *fi = (FrameItem *)malloc(sizeof(FrameItem));
+        if (!fi) {
+            av_buffer_unref(&buffer);
+            av_frame_unref(frame);
+            continue;
+        }
+        fi->header.size_decompress = frame_size;
+        fi->header.size_compress = 0;
+        fi->header.width = frame->width;
+        fi->header.height = frame->height;
+        fi->header.pix_fmt = frame->format;
+        fi->sequence_number = sequence_number;
+        fi->timestamp = 0;  // Flush: nao logar latencia
+        fi->data = buffer;
+
+        queue_push(&g_frame_queue, fi);
 
         int64_t decode_time = av_gettime() - decode_start;
         g_total_decode_time += decode_time;
@@ -388,9 +412,9 @@ void *mt_producer_thread(void *arg) {
         printf("[Producer] Finalizado. Total de frames: %d\n", sequence_number);
     }
 
-    // Envia sinais de término para threads codificadoras (NULL buffers = poison pill)
+    // Envia sinais de término para threads codificadoras (NULL = poison pill)
     for (int i = 0; i < encoder_thread_count; i++) {
-        frame_queue_push(&g_frame_queue, NULL, -1, 0, 0, 0, 0, 0);
+        queue_push(&g_frame_queue, NULL);
     }
 
     // Aguarda todas as threads codificadoras terminarem
@@ -431,11 +455,11 @@ void *mt_encoder_thread(void *arg) {
 
     // Loop principal
     while (1) {
-        // Pop único e atômico da fila unificada (buffer + metadata)
-        FrameQueueItem item = frame_queue_pop(&g_frame_queue);
+        // Pop da fila (bloqueante)
+        FrameItem *fi = (FrameItem *)queue_pop(&g_frame_queue);
 
-        // Verifica sinal de término (poison pill = buffer NULL)
-        if (item.buffer == NULL) {
+        // Verifica sinal de término (poison pill = NULL)
+        if (!fi) {
             if (g_debug_mode) {
                 printf("[Encoder %d] Recebeu sinal de término\n", thread_id);
             }
@@ -448,17 +472,17 @@ void *mt_encoder_thread(void *arg) {
         int compressed_size;
         if (ctx->encoder_type == ENCODER_TYPE_LZ4HC) {
             compressed_size = LZ4_compress_HC(
-                (const char *)item.buffer->data,
+                (const char *)fi->data->data,
                 ctx->compressed_buffer,
-                item.size_decompress,
+                fi->header.size_decompress,
                 ctx->max_compressed_size,
                 ctx->compression_level
             );
         } else {
             compressed_size = LZ4_compress_fast(
-                (const char *)item.buffer->data,
+                (const char *)fi->data->data,
                 ctx->compressed_buffer,
-                item.size_decompress,
+                fi->header.size_decompress,
                 ctx->max_compressed_size,
                 ctx->compression_level
             );
@@ -469,30 +493,30 @@ void *mt_encoder_thread(void *arg) {
 
         if (compressed_size <= 0) {
             fprintf(stderr, "[Encoder %d] Erro na compressão do frame %d\n",
-                    thread_id, item.sequence_number);
-            av_buffer_unref(&item.buffer);
+                    thread_id, fi->sequence_number);
+            frame_item_free(fi);
             continue;
         }
 
         // Prepara header para escrita
         FrameHeader header = {
-            .size_decompress = item.size_decompress,
+            .size_decompress = fi->header.size_decompress,
             .size_compress = compressed_size,
-            .width = item.width,
-            .height = item.height,
-            .pix_fmt = item.pix_fmt
+            .width = fi->header.width,
+            .height = fi->header.height,
+            .pix_fmt = fi->header.pix_fmt
         };
 
         if (g_debug_mode) {
             printf("[METRICA] COMPRESS_FRAME %d %ld %d->%d (%.1f%%)\n",
-                   item.sequence_number, compress_time,
+                   fi->sequence_number, compress_time,
                    header.size_decompress, compressed_size,
                    100.0 * compressed_size / header.size_decompress);
         }
 
         // Aguarda sua vez de escrever (escrita sequencial)
         pthread_mutex_lock(&g_write_mutex);
-        while ((int)g_next_to_write != item.sequence_number) {
+        while ((int)g_next_to_write != fi->sequence_number) {
             pthread_cond_wait(&g_write_cond, &g_write_mutex);
         }
 
@@ -505,7 +529,7 @@ void *mt_encoder_thread(void *arg) {
 
         if (written1 != 1 || written2 != (size_t)compressed_size) {
             fprintf(stderr, "[Encoder %d] Erro ao escrever frame %d\n",
-                    thread_id, item.sequence_number);
+                    thread_id, fi->sequence_number);
         }
 #else
         (void)header;  // Avoid unused warning
@@ -515,13 +539,13 @@ void *mt_encoder_thread(void *arg) {
         g_total_write_time += write_time;
 
         if (g_debug_mode) {
-            printf("[METRICA] WRITE_FRAME %d %ld\n", item.sequence_number, write_time);
+            printf("[METRICA] WRITE_FRAME %d %ld\n", fi->sequence_number, write_time);
         }
 
         // Log de latência por frame (formato compatível com transcode.c)
-        // Só loga se pkt_dts != 0 (frames do flush têm pkt_dts = 0)
-        if (!g_debug_mode && item.pkt_dts != 0) {
-            int64_t latency = av_gettime() - item.pkt_dts;
+        // Só loga se timestamp != 0 (frames do flush têm timestamp = 0)
+        if (!g_debug_mode && fi->timestamp != 0) {
+            int64_t latency = av_gettime() - fi->timestamp;
             printf("%s,%d,%d,transcoding,%ld,%d\n",
                    g_profile_name, g_num_decode_threads, g_num_encoder_threads,
                    latency, g_compression_level);
@@ -533,8 +557,8 @@ void *mt_encoder_thread(void *arg) {
         pthread_cond_broadcast(&g_write_cond);
 
 
-        // Libera buffer (ownership transferido do pop)
-        av_buffer_unref(&item.buffer);
+        // Libera FrameItem (ownership transferido do pop)
+        frame_item_free(fi);
     }
 
     // Decrementa contador de threads ativas

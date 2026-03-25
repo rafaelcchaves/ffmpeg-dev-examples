@@ -14,6 +14,8 @@
 #include <lz4.h>
 #include <lzo/lzo1x.h>
 
+#include "frame_types.h"
+
 /*
 To run psnr:
 ffmpeg -i <compressed> -i <original> -lavfi psnr -f null - 
@@ -52,13 +54,6 @@ const char *profile_name = NULL;
 uint8_t *image_data[4];
 int image_linesize[4];
 int image_bufsize;
-
-typedef struct {
-    int32_t size_decompress;
-    int32_t size_compress;
-    int32_t width, height;
-    int32_t pix_fmt;
-} headerFile;
 
 static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket *inpkt, AVFrame *frame, AVPacket *outpkt,
                       FILE *outfile)
@@ -131,9 +126,9 @@ static void transcode(AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, AVPacket
             exit(1);
         }
 
-        headerFile hf = {image_bufsize, compressedSize, frame->width, frame->height, frame->format};
+        FrameHeader hf = {image_bufsize, compressedSize, frame->width, frame->height, frame->format};
 #if ENABLE_OUTPUT_WRITE
-        fwrite(&hf, sizeof(headerFile), 1, outfile);
+        fwrite(&hf, sizeof(FrameHeader), 1, outfile);
         fwrite(compressedFrame, 1, compressedSize, outfile);
 #else
         (void)outfile;  // Avoid unused warning

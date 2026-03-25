@@ -5,8 +5,12 @@ Este projeto contém um conjunto de scripts para realizar benchmarking de transc
 ## Estrutura do Projeto
 
 -   `dataset/generate.sh`: Gera arquivos de vídeo codificados a partir de um arquivo YUV bruto.
--   `src/transcode.c` / `transcode.sh`: Realiza a transcodificação de um vídeo para diferentes formatos.
--   `src/decode.cpp` / `decode.sh`: Realiza a decodificação de um vídeo.
+-   `src/transcode.c` / `transcode.sh`: Realiza a transcodificação de um vídeo para diferentes formatos (single-thread).
+-   `src/transcode_lz4/` / `transcode.sh`: Transcodificação LZ4/LZ4HC multithread (arquitetura producer-consumer).
+-   `src/decode.cpp` / `decode.sh`: Realiza a decodificação de um vídeo (FFmpeg).
+-   `src/decode_lz4/` / `decode.sh`: Decodificação LZ4 multithread (arquitetura producer-consumer).
+-   `src/frame_types.h`: Tipos compartilhados entre encode e decode (`FrameHeader`, `FrameItem`).
+-   `src/queue.h` / `src/queue.c`: Fila genérica thread-safe com gerenciamento de ownership.
 -   `dataset/compare.sh`: Compara a qualidade de diferentes arquivos de vídeo em relação a um arquivo de referência usando SSIM.
 -   `build-ffmpeg.md`: Guia para compilar o FFmpeg com os codecs necessários.
 
@@ -52,7 +56,7 @@ O benchmark utiliza **três perfis de configuração de threads** para avaliar d
 | `balanced` | 8 | 8 | Configuração equilibrada para uso geral |
 | `high_throughput` | 16 | 16 | Focado em máxima vazão (throughput) |
 
-**Nota:** Para codificadores LZ4 e LZ4HC, a codificação utiliza apenas 1 thread em todos os perfis, pois não há suporte a multi-threading implementado para esses codecs.
+**Nota:** Para codificadores LZ4 e LZ4HC, o perfil `low_latency` (1 thread) utiliza a implementação single-thread (`transcode.c`). Os perfis `balanced` e `high_throughput` utilizam a implementação multithread (`transcode_lz4/`) com arquitetura producer-consumer, onde uma thread decodifica com FFmpeg e múltiplas threads comprimem com LZ4/LZ4HC em paralelo.
 
 **Uso:**
 
@@ -78,7 +82,7 @@ O benchmark utiliza **três perfis de configuração de threads** para avaliar d
 
 ### 3. Decodificar um Vídeo (`decode.sh`)
 
-Este script compila e executa o programa `src/decode.cpp` (ou os módulos em `src/decode_lz4/` para descompactação LZ4) para decodificar um vídeo, testando o desempenho com diferentes números de threads.
+Este script compila e executa o programa `src/decode.cpp` (ou os módulos em `src/decode_lz4/` para descompactação LZ4) para decodificar um vídeo, testando o desempenho com diferentes números de threads. A decodificação LZ4 multithread utiliza arquitetura producer-consumer com fila genérica (`Queue`), onde uma thread lê frames do arquivo e múltiplas threads descompactam com LZ4 em paralelo.
 
 #### Perfis de Threads
 

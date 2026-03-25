@@ -104,7 +104,7 @@ else
             src/decode_lz4/decode_lz4_main.cpp src/decode_lz4/decode_lz4_mt.cpp \
             src/decode_lz4/frame_reader.cpp src/decode_lz4/frame_decoder.cpp \
             src/decode_lz4/frame_writer.cpp src/decode_lz4/stats.cpp \
-            src/cpu_stats.cpp \
+            src/queue.c src/cpu_stats.cpp \
             -o "$bin" -I/usr/local/include -L/usr/local/lib \
             -lavutil -lm -llz4 -lpthread
 

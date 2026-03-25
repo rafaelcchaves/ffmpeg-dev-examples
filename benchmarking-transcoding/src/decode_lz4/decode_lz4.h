@@ -7,25 +7,18 @@
 #include <vector>
 #include <string>
 #include <pthread.h>
-#include <semaphore.h>
 
 extern "C" {
 #include <libavutil/imgutils.h>
 #include <libavutil/mem.h>
 #include <libavutil/time.h>
 #include <lz4.h>
+#include "../frame_types.h"
+#include "../queue.h"
 }
 
 // Flag global de debug para métricas detalhadas
 extern bool g_debug_mode;
-
-// Estrutura do header do arquivo compactado
-typedef struct {
-    int32_t size_decompress;
-    int32_t size_compress;
-    int32_t width, height;
-    int32_t pix_fmt;
-} FrameHeader;
 
 // Contexto de decodificacao
 typedef struct {
@@ -71,39 +64,21 @@ void stats_print_summary(const char *profile, int threads, int frames, int64_t t
 void stats_print_cpu(const char *profile, int threads, double cpu_usage);
 
 // ============================================================================
-// Estruturas para Decodificação Multithread (Buffer Compartilhado Simples)
+// Estruturas para Decodificação Multithread (Fila Generica)
 // ============================================================================
-
-// Frame disponível no buffer compartilhado
-typedef struct {
-    int sequence_number;
-    FrameHeader header;
-    int data_size;           // Tamanho dos dados codificados
-} SharedFrameInfo;
 
 // Contexto da thread decodificadora (memória privativa)
 typedef struct {
     int thread_id;
     DecodeContext decode_ctx;           // Buffers privados de decodificação
-    char *compressed_buffer;            // Buffer privativo para dados comprimidos
-    int max_compressed_size;
 } ThreadContext;
 
 // ============================================================================
 // Variáveis Globais para Multithreading
 // ============================================================================
 
-// Buffer compartilhado (produtor <-> consumidores)
-extern char *g_shared_buffer;
-extern SharedFrameInfo g_shared_frame_info;
-extern int g_shared_buffer_size;
-
-// Semáforos para sincronização do buffer compartilhado
-extern sem_t g_sem_empty;  // Sinaliza que buffer está vazio (produtor pode escrever)
-extern sem_t g_sem_full;   // Sinaliza que buffer tem dados (consumidor pode ler)
-
-// Mutex para proteger acesso às info do frame compartilhado
-extern pthread_mutex_t g_shared_info_mutex;
+// Fila de frames (generica com FrameItem)
+extern Queue g_frame_queue;
 
 // Controle de escrita sequencial no arquivo de saída
 extern size_t g_next_to_write;
@@ -133,13 +108,11 @@ extern std::string g_profile_name;
 // ============================================================================
 
 // Inicialização
-int mt_initialize_shared_buffer(int buffer_size);
 int mt_initialize_synchronization();
 int mt_initialize_write_control(FILE *output_file);
 int mt_initialize_state(FILE *input_file);
 
 // Limpeza
-void mt_cleanup_shared_buffer();
 void mt_cleanup_synchronization();
 void mt_cleanup_write_control();
 void mt_cleanup_state();

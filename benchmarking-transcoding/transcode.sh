@@ -95,7 +95,7 @@ for profile_config in "${profiles[@]}"; do
                 -DTHREADS_IN="$threads_in_config" -DTHREADS_OUT="$threads_out" $WRITE_FLAG \
                 src/transcode_lz4/transcode_lz4_main.c \
                 src/transcode_lz4/transcode_lz4_mt.c \
-                src/avbuffer_queue.c \
+                src/queue.c \
                 src/cpu_stats.cpp \
                 -o "$bin" \
                 -I/usr/local/include -L/usr/local/lib \
