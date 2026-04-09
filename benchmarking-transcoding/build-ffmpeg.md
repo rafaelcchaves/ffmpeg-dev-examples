@@ -128,7 +128,9 @@ git checkout n7.1
   --enable-libx264 \
   --enable-libx265 \
   --enable-libvvenc \
-  --enable-libvvdec
+  --enable-libvvdec \
+  --enable-asm \
+  --enable-inline-asm
 
 make -j $(nproc)
 sudo make install
